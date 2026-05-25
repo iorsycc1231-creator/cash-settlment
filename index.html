@@ -204,7 +204,7 @@ hr{border:none;border-top:1px solid #e5e7eb;margin:12px 0}
 var APPS = JSON.parse(localStorage.getItem('apps')||'[]');
 var DEPOSITS = JSON.parse(localStorage.getItem('deposits')||'[]');
 var CARRYOVER = 100000; // 前月繰越（固定・10万円）
-var GAS_URL = 'https://script.google.com/macros/s/AKfycby8CrUQvf-6c4CcnhtATHtB6PmyXLHZv0EPlFRnCaX2Vox0ehczfd8esrewMWpM5qwmxQ/exec';
+var GAS_URL = 'https://script.google.com/macros/s/AKfycbzODAPUfKtnqxmDbPeKRZz9eMB3vXlxIPSlj_mdIlon-ODIOq2b1Or6ThhhnXuMcZ_vyg/exec';
 
 // ---- パスワード設定（ここを変更してください） ----
 var ADMIN_PASSWORD = '1234';
@@ -805,19 +805,15 @@ function showDone(app){
 }
 
 function rA(){
-  // 申請データをGASから取得
+  // ローディング表示
+  var al = $e('al');
+  if(al) al.innerHTML = '<div style="text-align:center;padding:40px 20px;color:#6b7280"><div class="spin"></div><div style="margin-top:8px">スプレッドシートから読み込み中...</div></div>';
+
+  // 申請データをGASから取得（GASをメインソースとして使用）
   loadFromSheet(function(sheetData){
     if(sheetData && sheetData.length > 0){
-      sheetData.forEach(function(sd){
-        var local = APPS.find(function(a){return a.id===sd.id;});
-        if(local){
-          local.status = sd.status || local.status;
-          local.settlement_date = sd.settlement_date || local.settlement_date;
-        } else {
-          // スプレッドシートにあるがlocalStorageにない申請を追加
-          APPS.push(sd);
-        }
-      });
+      // GASのデータで全件上書き（GASがマスター）
+      APPS = sheetData;
       sv();
     }
     // 入金データをGASから取得
@@ -829,11 +825,8 @@ function rA(){
     .then(function(r){return r.json();})
     .then(function(d){
       if(d.ok && d.data && d.data.length > 0){
-        // GASのデータとlocalStorageをマージ（IDで重複排除）
-        d.data.forEach(function(sd){
-          var exists = DEPOSITS.find(function(dep){return dep.id===sd.id;});
-          if(!exists) DEPOSITS.push(sd);
-        });
+        // GASの入金データで上書き（GASがマスター）
+        DEPOSITS = d.data;
         localStorage.setItem('deposits', JSON.stringify(DEPOSITS));
       }
       renderAdminList();
