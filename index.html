@@ -70,7 +70,7 @@ hr{border:none;border-top:1px solid #e5e7eb;margin:12px 0}
 .fbtn.on{background:#1c1917;color:#fff;border-color:#1c1917}
 
 @media print {
-  @page { size: A4; margin: 15mm 20mm 0mm 20mm; }
+  @page { size: A4; margin: 10mm 15mm 0mm 15mm; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   html, body, #print-sheet, #print-sheet * {
     background: #fff !important;
@@ -86,14 +86,13 @@ hr{border:none;border-top:1px solid #e5e7eb;margin:12px 0}
     margin: 0;
     color: #000;
     background: #fff !important;
+    /* A4印刷領域(margin考慮): 180mm × 277mm に収まるよう縮小 */
+    width: 180mm;
+    transform-origin: top left;
+    transform: scale(0.88);
     page-break-after: avoid;
     page-break-inside: avoid;
-    overflow: hidden;
-  }
-  /* 1ページに収める：下余白を最小化し、コンテンツを縮小 */
-  #print-sheet > div {
-    max-height: 257mm;
-    overflow: hidden;
+    overflow: visible;
   }
 }
 </style>
@@ -215,7 +214,8 @@ hr{border:none;border-top:1px solid #e5e7eb;margin:12px 0}
         <div style="display:flex;justify-content:space-between;border-top:1px solid #e5e7eb;padding-top:8px;margin-top:4px"><span style="font-weight:700">残高（次月繰越へ）</span><span style="font-weight:700;font-size:16px" id="cm-bal">¥0</span></div>
       </div>
       <label style="margin-top:0">対象月（記録用）</label>
-      <input type="month" id="close-month" style="margin-bottom:12px"/>
+      <div id="close-month-display" style="margin-bottom:12px;padding:10px 12px;background:#f3f4f6;border-radius:8px;font-size:14px;font-weight:600;color:#374151"></div>
+      <input type="hidden" id="close-month"/>
       <button onclick="execClose()" style="width:100%;padding:14px;background:#7c3aed;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">締め処理を実行する</button>
       <button onclick="closeCloseModal()" style="width:100%;padding:12px;background:#f3f4f6;color:#374151;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:8px">キャンセル</button>
     </div>
@@ -535,6 +535,38 @@ function renderThumbs(){
 
 function removeR(i){ RECEIPTS.splice(i,1); renderThumbs(); }
 
+function removeItem(ri, idx){
+  if(!RECEIPTS[ri]||!RECEIPTS[ri].data) return;
+  RECEIPTS[ri].data.items.splice(idx,1);
+  // renderItemRows を再呼び出し
+  var wrap=$e('r'+ri+'items');
+  if(!wrap) return;
+  // showAllFormsのrenderItemRowsはクロージャなので再描画はDOM再構築で対応
+  // → items配列更新後にshowAllFormsを再呼び出し（スクロール位置保持）
+  var scrollY = window.scrollY;
+  showAllForms(CURRENT_PERSON);
+  window.scrollTo(0, scrollY);
+}
+
+function recalcTotal(ri){
+  var d = RECEIPTS[ri] && RECEIPTS[ri].data;
+  if(!d) return;
+  var total = 0;
+  (d.items||[]).forEach(function(it,i){
+    var amEl = $e('r'+ri+'am'+i);
+    var v = amEl ? parseInt(amEl.value)||0 : it.amount||0;
+    it.amount = v;
+    total += v;
+  });
+  d.total = total;
+  var totEl = $e('r'+ri+'tot');
+  if(totEl) totEl.textContent = '¥'+fmt(total);
+  // バナーの合計も更新
+  var grand = RECEIPTS.reduce(function(s,r){ return s+(r.data?r.data.total||0:0); },0);
+  var bannerEl = document.querySelector('.banner div:nth-child(2)');
+  if(bannerEl) bannerEl.textContent = '¥'+fmt(grand);
+}
+
 function removeFormR(i){
   RECEIPTS.splice(i,1);
   if(RECEIPTS.length===0){
@@ -567,6 +599,7 @@ function analyzeAll(){
 }
 
 function showAllForms(person){
+  CURRENT_PERSON = person;
   var grandTotal = RECEIPTS.reduce(function(s,r){return s+(r.data?r.data.total||0:0);},0);
   var el = $e('area');
   el.innerHTML = '';
@@ -653,27 +686,65 @@ function showAllForms(person){
     itemsLbl.textContent = '明細・勘定科目';
     card.appendChild(itemsLbl);
 
-    (d.items||[]).forEach(function(it,i){
-      var ac = gac(it.name);
-      var row = document.createElement('div');
-      row.className = 'irow';
-      var opts = ACS.map(function(a){return '<option'+(a===ac?' selected':'')+'>'+a+'</option>';}).join('');
-      row.innerHTML =
-        '<div style="display:flex;justify-content:space-between;margin-bottom:6px">' +
-        '<span style="font-weight:600">'+it.name+'</span>' +
-        '<span style="font-weight:700;color:#16a34a">¥'+fmt(it.amount)+'</span>' +
-        '</div>' +
-        '<span class="ttag">'+(it.tax_category||'不明')+'</span>' +
-        '<select id="r'+ri+'ac'+i+'" style="width:100%;padding:6px 8px;font-size:12px;border:1px solid #e5e7eb;border-radius:6px;margin-top:4px;font-family:inherit">'+opts+'</select>';
-      card.appendChild(row);
-    });
+    // 明細行コンテナ
+    var itemsWrap = document.createElement('div');
+    itemsWrap.id = 'r'+ri+'items';
+    card.appendChild(itemsWrap);
+
+    // 明細行を描画する関数
+    function renderItemRows(ri, items){
+      var wrap = $e('r'+ri+'items');
+      wrap.innerHTML = '';
+      items.forEach(function(it, i){
+        var ac = it.account || gac(it.name);
+        var taxOpts = ['課税(10%)','課税(8%)','非課税','不明'].map(function(t){
+          return '<option'+(t===(it.tax_category||'不明')?' selected':'')+'>'+t+'</option>';
+        }).join('');
+        var acOpts = ACS.map(function(a){return '<option'+(a===ac?' selected':'')+'>'+a+'</option>';}).join('');
+        var row = document.createElement('div');
+        row.className = 'irow';
+        row.style.cssText = 'position:relative;padding-right:28px';
+        row.innerHTML =
+          '<div style="display:flex;gap:6px;margin-bottom:6px">' +
+            '<input type="text" id="r'+ri+'nm'+i+'" value="'+it.name.replace(/"/g,'&quot;')+'" placeholder="品目名"' +
+            ' style="flex:1;padding:5px 8px;font-size:12px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit"/>' +
+            '<input type="number" id="r'+ri+'am'+i+'" value="'+it.amount+'" min="0"' +
+            ' style="width:90px;padding:5px 8px;font-size:12px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;text-align:right"' +
+            ' oninput="recalcTotal('+ri+')" />' +
+          '</div>' +
+          '<div style="display:flex;gap:6px">' +
+            '<select id="r'+ri+'tx'+i+'" style="flex:1;padding:5px 8px;font-size:12px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit">'+taxOpts+'</select>' +
+            '<select id="r'+ri+'ac'+i+'" style="flex:2;padding:5px 8px;font-size:12px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit">'+acOpts+'</select>' +
+          '</div>' +
+          '<button onclick="removeItem('+ri+','+i+')" style="position:absolute;top:0;right:0;width:22px;height:22px;border-radius:50%;background:#fee2e2;color:#dc2626;border:none;cursor:pointer;font-size:13px;line-height:22px;padding:0;font-weight:700">×</button>';
+        wrap.appendChild(row);
+      });
+      // 行追加ボタン
+      var addBtn = document.createElement('button');
+      addBtn.textContent = '＋ 明細を追加';
+      addBtn.style.cssText = 'margin-top:6px;width:100%;padding:7px;background:#f0fdf4;color:#16a34a;border:1.5px dashed #86efac;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit';
+      addBtn.onclick = function(){
+        RECEIPTS[ri].data = RECEIPTS[ri].data || {};
+        RECEIPTS[ri].data.items = RECEIPTS[ri].data.items || [];
+        RECEIPTS[ri].data.items.push({name:'',amount:0,tax_category:'課税(10%)',account:'雑費'});
+        renderItemRows(ri, RECEIPTS[ri].data.items);
+        recalcTotal(ri);
+      };
+      wrap.appendChild(addBtn);
+    }
+
+    // itemsをRECEIPTS[ri].data.itemsに同期してから描画
+    if(!d.items) d.items = [];
+    RECEIPTS[ri].data = d;
+    renderItemRows(ri, d.items);
 
     var tbox = document.createElement('div');
     tbox.className = 'tbox';
+    tbox.id = 'r'+ri+'tbox';
     tbox.innerHTML =
-      '<div class="tr"><span style="color:#6b7280">消費税(8%)</span><span>'+(d.tax_8?'¥'+fmt(d.tax_8):'—')+'</span></div>' +
-      '<div class="tr"><span style="color:#6b7280">消費税(10%)</span><span>'+(d.tax_10?'¥'+fmt(d.tax_10):'—')+'</span></div>' +
-      '<div class="tr"><span style="font-weight:700">小計</span><span style="font-weight:700;color:#dc2626">¥'+fmt(d.total)+'</span></div>';
+      '<div class="tr" id="r'+ri+'t8"><span style="color:#6b7280">消費税(8%)</span><span>'+(d.tax_8?'¥'+fmt(d.tax_8):'—')+'</span></div>' +
+      '<div class="tr" id="r'+ri+'t10"><span style="color:#6b7280">消費税(10%)</span><span>'+(d.tax_10?'¥'+fmt(d.tax_10):'—')+'</span></div>' +
+      '<div class="tr"><span style="font-weight:700">小計</span><span style="font-weight:700;color:#dc2626" id="r'+ri+'tot">¥'+fmt(d.total)+'</span></div>';
     card.appendChild(tbox);
     el.appendChild(card);
   });
@@ -773,15 +844,23 @@ function showAllForms(person){
     }
     var receiptsSnap = RECEIPTS.map(function(r,ri){
       var d=r.data||{};
+      // DOMから最新の編集値を取得
+      var items = (d.items||[]).map(function(it,i){
+        var nmEl=$e('r'+ri+'nm'+i), amEl=$e('r'+ri+'am'+i), txEl=$e('r'+ri+'tx'+i), acEl=$e('r'+ri+'ac'+i);
+        return {
+          name: nmEl?nmEl.value:it.name,
+          amount: amEl?parseInt(amEl.value)||0:it.amount,
+          tax_category: txEl?txEl.value:(it.tax_category||'不明'),
+          account: acEl?acEl.value:'雑費'
+        };
+      });
+      var total = items.reduce(function(s,it){return s+it.amount;},0);
       return {
         store:$e('r'+ri+'store').value,
         date:$e('r'+ri+'date').value,
         invoice:$e('r'+ri+'inv').value,
-        items:(d.items||[]).map(function(it,i){
-          var el=$e('r'+ri+'ac'+i);
-          return {name:it.name,amount:it.amount,tax_category:it.tax_category,account:el?el.value:'雑費'};
-        }),
-        tax_8:d.tax_8,tax_10:d.tax_10,total:d.total,b64:r.b64,mime:r.mime
+        items:items,
+        tax_8:d.tax_8,tax_10:d.tax_10,total:total,b64:r.b64,mime:r.mime
       };
     });
     showConfirm({
@@ -1044,34 +1123,25 @@ function buildSeisanshoHTML(a){
   var dateStr = a.settlement_date || a.date || today();
   var TOTAL_ROWS = 8;
 
-  // ---- 明細行を組み立て ----
+  // ---- 明細行：レシート1件＝1行 ----
   var lines = [];
   if(a.receipts && a.receipts.length > 0){
     a.receipts.forEach(function(r){
       var txDate = mdLabel(r.date || dateStr);
+      // 勘定科目：items内のaccountを重複排除して結合
+      var accs = [];
       if(r.items && r.items.length > 0){
         r.items.forEach(function(it){
-          lines.push({
-            date: txDate,
-            account: it.account || '',
-            amount: it.amount,
-            name: it.name + (r.store ? ' ('+r.store+')' : ''),
-            qty: 1
-          });
+          var ac = (it.account||'').trim();
+          if(ac && accs.indexOf(ac)===-1) accs.push(ac);
         });
-      } else {
-        lines.push({date:txDate, account:'', amount:r.total||0, name:r.store||'', qty:1});
       }
-    });
-  } else if(a.items && a.items.length > 0){
-    var txDate = mdLabel(dateStr);
-    a.items.forEach(function(it){
       lines.push({
         date: txDate,
-        account: it.account || '',
-        amount: it.amount,
-        name: it.name + (a.store ? ' ('+a.store+')' : ''),
-        qty: 1
+        account: accs.join('・'),
+        amount: r.total || 0,
+        name: r.store || '',
+        qty: r.items ? r.items.length : 1
       });
     });
   } else {
@@ -1427,11 +1497,17 @@ function openCloseModal(){
   $e('cm-exp').textContent = '¥'+fmt(b.expenseSum);
   $e('cm-bal').textContent = '¥'+fmt(b.balance);
   $e('cm-bal').style.color = b.balance >= 0 ? '#16a34a' : '#dc2626';
-  // 対象月を前月にデフォルト設定
-  var now = new Date();
-  var y = now.getMonth()===0 ? now.getFullYear()-1 : now.getFullYear();
-  var m = now.getMonth()===0 ? 12 : now.getMonth();
-  $e('close-month').value = y+'-'+('0'+m).slice(-2);
+  // 対象月：直近の精算日の月を自動セット（なければ今月）
+  var latestDate = null;
+  APPS.forEach(function(a){
+    var d = a.settlement_date || a.date;
+    if(d && (!latestDate || d > latestDate)) latestDate = d;
+  });
+  var ref = latestDate ? new Date(latestDate) : new Date();
+  var closeVal = ref.getFullYear()+'-'+('0'+(ref.getMonth()+1)).slice(-2);
+  var closeLabel = ref.getFullYear()+'年'+(ref.getMonth()+1)+'月';
+  $e('close-month').value = closeVal;
+  $e('close-month-display').textContent = closeLabel;
   $e('close-step1').style.display='block';
   $e('close-step2').style.display='none';
   $e('close-ov').style.display='block';
