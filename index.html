@@ -1153,11 +1153,10 @@ function buildSeisanshoHTML(a){
     '<div style="text-align:center;font-size:11px;margin-bottom:2px">'+toReiwa(dateStr)+'</div>'+
     '<div style="font-size:11px;margin-bottom:5px">上記合計金額正に受領いたしました。</div>'+
 
-    // 精算者氏名＋サイン（横並び）
+    // 精算者氏名＋サイン（電子サインのみ表示）
     '<div style="display:flex;align-items:flex-end;gap:8px;margin-top:4px">'+
       '<div style="font-size:11px;white-space:nowrap">精算者氏名</div>'+
-      '<div style="border-bottom:1.5px solid #000;min-width:160px;padding-bottom:2px;display:flex;align-items:flex-end;gap:8px">'+
-        '<span style="font-size:13px;font-weight:700">'+a.person+'</span>'+
+      '<div style="border-bottom:1.5px solid #000;min-width:160px;height:46px;display:flex;align-items:flex-end;padding-bottom:2px">'+
         (signEl ? signEl : '')+
       '</div>'+
     '</div>'+
