@@ -74,8 +74,26 @@ hr{border:none;border-top:1px solid #e5e7eb;margin:12px 0}
   #print-sheet {
     display: block !important;
     font-family: 'Noto Sans JP', sans-serif;
-    padding: 20mm 15mm;
-    color: #000;
+    padding: 15mm 15mm 0 15mm;
+    color: #000 !important;
+    background: #fff !important;
+  }
+  #print-sheet,
+  #print-sheet *,
+  #print-sheet *::before,
+  #print-sheet *::after {
+    background: #fff !important;
+    background-color: #fff !important;
+    color: #000 !important;
+    border-color: #333 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  @page {
+    margin: 0;
+    size: A4 portrait;
   }
 }
 </style>
@@ -922,13 +940,12 @@ function buildSeisanshoHTML(a){
 
   var dateStr = a.settlement_date || a.date || today();
 
-  // 明細行：「勘定科目」→「取引日」、レシートの日付を表示
+  // 明細行
   var itemRows = '';
   var filledRows = 0;
   if(a.receipts && a.receipts.length > 0){
     a.receipts.forEach(function(r){
       var txDate = r.date || dateStr;
-      // MM/DD 形式に整形
       var txLabel = (function(){
         try{var d=new Date(txDate);return (d.getMonth()+1)+'月'+d.getDate()+'日';}catch(e){return txDate;}
       })();
@@ -969,23 +986,32 @@ function buildSeisanshoHTML(a){
       '</tr>';
   }
 
+  // 精算日（令和表記）
+  var reiwaDate = toReiwa(dateStr);
+
+  // 電子サイン：sign（申請者本人）または client_sign（顧問先）を優先表示
+  var signSrc = a.sign || a.client_sign || '';
+  var signHTML = signSrc
+    ? '<img src="'+signSrc+'" style="height:56px;max-width:200px;object-fit:contain;vertical-align:middle;display:inline-block;margin-left:8px"/>'
+    : '<span style="display:inline-block;min-width:180px;border-bottom:1.5px solid #000;">&nbsp;</span>';
+
   return (
-    '<div style="position:relative;padding:32px 36px;font-size:13px;line-height:1.9;color:#000;font-family:\'Noto Sans JP\',sans-serif">'+
+    '<div style="padding:24px 36px 0 36px;font-size:13px;line-height:1.9;color:#000;font-family:\'Noto Sans JP\',sans-serif;background:#fff">'+
 
     // タイトル
-    '<div style="text-align:center;font-size:20px;font-weight:700;letter-spacing:8px;margin-bottom:20px">《 精　算　書 》</div>'+
+    '<div style="text-align:center;font-size:20px;font-weight:700;letter-spacing:8px;margin-bottom:16px">《 精　算　書 》</div>'+
 
     // 宛先（固定）
     '<div style="font-size:13px;margin-bottom:6px">イソベ石油株式会社　御中</div>'+
 
     // 期間
-    '<div style="font-size:13px;margin-bottom:16px">'+
+    '<div style="font-size:13px;margin-bottom:14px">'+
       (function(){var d=new Date(dateStr);return (d.getMonth()+1)+'月'+d.getDate()+'日';})()+
       '　〜　月　　日'+
     '</div>'+
 
-    // 明細テーブル（全セルにborderを指定、border-collapseで隙間なし）
-    '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:24px;table-layout:fixed">'+
+    // 明細テーブル
+    '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:20px;table-layout:fixed">'+
       '<colgroup>'+
         '<col style="width:90px"/>'+
         '<col style="width:80px"/>'+
@@ -1009,16 +1035,21 @@ function buildSeisanshoHTML(a){
       '</tfoot>'+
     '</table>'+
 
-    // 日付
-    '<div style="text-align:center;font-size:13px;margin-bottom:12px">'+toReiwa(dateStr)+'</div>'+
+    // 精算日（令和）
+    '<div style="text-align:center;font-size:13px;margin-bottom:10px">'+reiwaDate+'</div>'+
 
-    '<div style="font-size:12px;margin-bottom:20px">上記合計金額正に受領いたしました。</div>'+
+    // 受領文
+    '<div style="font-size:12px;margin-bottom:14px">上記合計金額正に受領いたしました。</div>'+
 
-    // 精算者
-    '<div style="font-size:13px">精算者氏名　<span style="font-size:15px;font-weight:700;border-bottom:1.5px solid #000;padding-bottom:2px;display:inline-block;min-width:140px">'+a.person+'</span></div>'+
+    // 精算者氏名 + 電子サイン（サインの下が最終行 → padding-bottom:0）
+    '<div style="font-size:13px;display:flex;align-items:center;padding-bottom:0">'+
+      '<span style="white-space:nowrap;margin-right:8px">精算者氏名</span>'+
+      signHTML+
+    '</div>'+
 
-    // 申請ID
-    '<div style="position:absolute;bottom:8px;right:12px;font-size:10px;color:#9ca3af">'+a.id+'</div>'+
+    // 申請ID（サインのすぐ下、余白なし）
+    '<div style="font-size:10px;color:#999;text-align:right;margin-top:4px">'+a.id+'</div>'+
+
     '</div>'
   );
 }
