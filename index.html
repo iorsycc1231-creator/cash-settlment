@@ -587,10 +587,17 @@ function analyzeAll(){
     var r=RECEIPTS[i];
     fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:r.b64,mimeType:r.mime})})
     .then(function(res){if(!res.ok)return res.json().then(function(e){throw new Error(e.error||res.status);});return res.json();})
-    .then(function(d){r.data=d; next(i+1);})
+    .then(function(d){
+      if(!d.items) d.items=[];
+      d.items = d.items.map(function(it){
+        return {name:it.name||'',amount:Number(it.amount)||0,tax_category:it.tax_category||'不明',account:it.account||''};
+      });
+      if(!d.total) d.total = d.items.reduce(function(s,it){return s+it.amount;},0);
+      r.data=d; next(i+1);
+    })
     .catch(function(){
       r.data={store_name:'サンプル商店'+(i+1),date:today(),invoice_number:'',
-        items:[{name:'商品'+(i+1),amount:500*(i+1),tax_category:'10%標準'}],
+        items:[{name:'商品'+(i+1),amount:500*(i+1),tax_category:'課税(10%)'}],
         tax_8:0,tax_10:Math.floor(50*(i+1)),total:500*(i+1)};
       next(i+1);
     });
@@ -697,8 +704,12 @@ function showAllForms(person){
       wrap.innerHTML = '';
       items.forEach(function(it, i){
         var ac = it.account || gac(it.name);
+        var rawTax = it.tax_category || '';
+        var normTax = rawTax.indexOf('8')!==-1 ? '課税(8%)' :
+                      rawTax.indexOf('非')!==-1 ? '非課税' :
+                      (rawTax.indexOf('10')!==-1||rawTax.indexOf('標準')!==-1) ? '課税(10%)' : '不明';
         var taxOpts = ['課税(10%)','課税(8%)','非課税','不明'].map(function(t){
-          return '<option'+(t===(it.tax_category||'不明')?' selected':'')+'>'+t+'</option>';
+          return '<option'+(t===normTax?' selected':'')+'>'+t+'</option>';
         }).join('');
         var acOpts = ACS.map(function(a){return '<option'+(a===ac?' selected':'')+'>'+a+'</option>';}).join('');
         var row = document.createElement('div');
@@ -706,7 +717,7 @@ function showAllForms(person){
         row.style.cssText = 'position:relative;padding-right:28px';
         row.innerHTML =
           '<div style="display:flex;gap:6px;margin-bottom:6px">' +
-            '<input type="text" id="r'+ri+'nm'+i+'" value="'+it.name.replace(/"/g,'&quot;')+'" placeholder="品目名"' +
+            '<input type="text" id="r'+ri+'nm'+i+'" value="'+(it.name||'').replace(/"/g,'&quot;')+'" placeholder="品目名"' +
             ' style="flex:1;padding:5px 8px;font-size:12px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit"/>' +
             '<input type="number" id="r'+ri+'am'+i+'" value="'+it.amount+'" min="0"' +
             ' style="width:90px;padding:5px 8px;font-size:12px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;text-align:right"' +
@@ -735,6 +746,14 @@ function showAllForms(person){
 
     // itemsをRECEIPTS[ri].data.itemsに同期してから描画
     if(!d.items) d.items = [];
+    d.items = d.items.map(function(it){
+      return {
+        name: it.name || '',
+        amount: Number(it.amount) || 0,
+        tax_category: it.tax_category || '不明',
+        account: it.account || ''
+      };
+    });
     RECEIPTS[ri].data = d;
     renderItemRows(ri, d.items);
 
