@@ -90,6 +90,11 @@ hr{border:none;border-top:1px solid #e5e7eb;margin:12px 0}
     page-break-inside: avoid;
     overflow: hidden;
   }
+  /* 1ページに収める：下余白を最小化し、コンテンツを縮小 */
+  #print-sheet > div {
+    max-height: 257mm;
+    overflow: hidden;
+  }
 }
 </style>
 </head>
@@ -710,20 +715,37 @@ function showAllForms(person){
   window.scrollTo(0,0);
 
   var method=null, signed=false, drawing=false;
+  var signStrokes_now=[], currentStroke_now=[];
 
   $e('bn').onclick = function(){
     method='now';
     $e('bn').className='mbtn mn'; $e('bl').className='mbtn';
     $e('sc').style.display='block'; $e('sbwrap').style.display='block';
     var cv=$e('cvs'); cv.width=cv.parentElement.offsetWidth-40;
-    signed=false; drawing=false; $e('sl').style.display='none';
+    signed=false; drawing=false; signStrokes_now=[]; currentStroke_now=[];
+    $e('sl').style.display='none';
     var ctx=cv.getContext('2d');
     ctx.clearRect(0,0,cv.width,cv.height);
     ctx.strokeStyle='#1c1917'; ctx.lineWidth=2.5; ctx.lineCap='round';
-    function xy(e){var r=cv.getBoundingClientRect(),s=e.touches?e.touches[0]:e;return{x:s.clientX-r.left,y:s.clientY-r.top};}
-    cv.onmousedown=cv.ontouchstart=function(e){e.preventDefault();drawing=true;var p=xy(e);ctx.beginPath();ctx.moveTo(p.x,p.y);};
-    cv.onmousemove=cv.ontouchmove=function(e){e.preventDefault();if(!drawing)return;var p=xy(e);ctx.lineTo(p.x,p.y);ctx.stroke();signed=true;$e('sl').style.display='inline';};
-    cv.onmouseup=cv.ontouchend=function(){drawing=false;};
+    function xy(e){var r=cv.getBoundingClientRect(),s=e.touches?e.touches[0]:e;return{x:Math.round(s.clientX-r.left),y:Math.round(s.clientY-r.top)};}
+    cv.onmousedown=cv.ontouchstart=function(e){
+      e.preventDefault();drawing=true;
+      var p=xy(e);currentStroke_now=[p];
+      ctx.beginPath();ctx.moveTo(p.x,p.y);
+    };
+    cv.onmousemove=cv.ontouchmove=function(e){
+      e.preventDefault();if(!drawing)return;
+      var p=xy(e);currentStroke_now.push(p);
+      ctx.lineTo(p.x,p.y);ctx.stroke();
+      signed=true;$e('sl').style.display='inline';
+    };
+    cv.onmouseup=cv.ontouchend=function(){
+      if(drawing&&currentStroke_now.length>0){
+        signStrokes_now.push(currentStroke_now.slice());
+        currentStroke_now=[];
+      }
+      drawing=false;
+    };
   };
 
   $e('bl').onclick = function(){
@@ -734,14 +756,21 @@ function showAllForms(person){
 
   $e('clrbtn').onclick = function(){
     var cv=$e('cvs'); cv.getContext('2d').clearRect(0,0,cv.width,cv.height);
-    signed=false; $e('sl').style.display='none';
+    signed=false; signStrokes_now=[]; currentStroke_now=[]; $e('sl').style.display='none';
   };
 
   confirmbtn.onclick = function(){
     if(!method){alert('精算方法を選択してください');return;}
     if(method==='now'&&!signed){alert('電子サインを記入してください');return;}
     var signData=null;
-    if(method==='now'){try{signData=$e('cvs').toDataURL();}catch(e){}}
+    var signStrokesData=null;
+    if(method==='now'){
+      try{
+        var cv=$e('cvs');
+        signData=cv.toDataURL();
+        signStrokesData={strokes:signStrokes_now,canvasWidth:cv.width,canvasHeight:cv.height,capturedAt:new Date().toISOString()};
+      }catch(e){}
+    }
     var receiptsSnap = RECEIPTS.map(function(r,ri){
       var d=r.data||{};
       return {
@@ -762,6 +791,7 @@ function showAllForms(person){
       method:method,
       status:method==='now'?'paid':'unsigned',
       sign:signData,
+      sign_strokes:signStrokesData,
       settlement_date:method==='now'?today():null
     });
   };
@@ -829,13 +859,19 @@ function showConfirm(snap){
       tax_10:snap.receipts.reduce(function(s,r){return s+(r.tax_10||0);},0),
       total:snap.grandTotal,
       method:snap.method,status:snap.status,
-      sign:snap.sign,settlement_date:snap.settlement_date,
-      client_sign:null,client_signed_at:null,paid_at:null,
+      sign:snap.sign,
+      sign_strokes:snap.sign_strokes ? JSON.stringify(snap.sign_strokes) : null,
+      settlement_date:snap.settlement_date,
+      client_sign:null,client_signed_at:null,client_sign_strokes:null,paid_at:null,
       receipts:snap.receipts.map(function(r){return{store:r.store,date:r.date,invoice:r.invoice,items:r.items,tax_8:r.tax_8,tax_10:r.tax_10,total:r.total};}),
       created:new Date().toISOString()
     };
     APPS.push(app); sv();
-    saveToSheet(app);
+    // saveToSheetは座標データも含めて送信（imgデータは除外）
+    var appForSheet = Object.assign({action:'save'}, app);
+    delete appForSheet.img;
+    if(appForSheet.receipts) appForSheet.receipts = appForSheet.receipts.map(function(r){var r2=Object.assign({},r);delete r2.b64;return r2;});
+    fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(appForSheet)}).catch(function(e){console.log('Sheet save error:',e);});
     showDone(app);
   };
 
@@ -1117,11 +1153,12 @@ function buildSeisanshoHTML(a){
     '<div style="text-align:center;font-size:11px;margin-bottom:2px">'+toReiwa(dateStr)+'</div>'+
     '<div style="font-size:11px;margin-bottom:5px">上記合計金額正に受領いたしました。</div>'+
 
-    // 精算者氏名＋サイン（横並び、画像のレイアウトに合わせる）
-    '<div style="display:flex;align-items:flex-end;gap:8px">'+
+    // 精算者氏名＋サイン（横並び）
+    '<div style="display:flex;align-items:flex-end;gap:8px;margin-top:4px">'+
       '<div style="font-size:11px;white-space:nowrap">精算者氏名</div>'+
-      '<div style="border-bottom:1.5px solid #000;min-width:160px;padding-bottom:2px;display:flex;align-items:flex-end">'+
-        (signEl ? signEl : '<span style="font-size:13px;font-weight:700">'+a.person+'</span>')+
+      '<div style="border-bottom:1.5px solid #000;min-width:160px;padding-bottom:2px;display:flex;align-items:flex-end;gap:8px">'+
+        '<span style="font-size:13px;font-weight:700">'+a.person+'</span>'+
+        (signEl ? signEl : '')+
       '</div>'+
     '</div>'+
 
@@ -1143,7 +1180,13 @@ function closePrintModal(){
 }
 
 function doPrint(){
-  window.print();
+  // print-sheetにコンテンツがセットされていることを確認してから印刷
+  var ps = document.getElementById('print-sheet');
+  var pb = document.getElementById('print-body');
+  if(pb && ps){
+    ps.innerHTML = pb.innerHTML;
+  }
+  setTimeout(function(){ window.print(); }, 100);
 }
 
 function renderDepHistory(){
@@ -1318,22 +1361,58 @@ function shD(id){
     if(cv){
       cv.width=cv.parentElement.offsetWidth-32;
       var csigned=false,cdr=false;
+      var signStrokes=[]; // 座標データ：[[{x,y},...],...]
+      var currentStroke=[];
       var ctx=cv.getContext('2d');
       ctx.strokeStyle='#1c1917';ctx.lineWidth=2;ctx.lineCap='round';
-      function cxy(e){var r=cv.getBoundingClientRect(),s=e.touches?e.touches[0]:e;return{x:s.clientX-r.left,y:s.clientY-r.top};}
-      cv.onmousedown=cv.ontouchstart=function(e){e.preventDefault();cdr=true;var p=cxy(e);ctx.beginPath();ctx.moveTo(p.x,p.y);};
-      cv.onmousemove=cv.ontouchmove=function(e){e.preventDefault();if(!cdr)return;var p=cxy(e);ctx.lineTo(p.x,p.y);ctx.stroke();csigned=true;$e('csl').style.display='inline';};
-      cv.onmouseup=cv.ontouchend=function(){cdr=false;};
-      $e('cclr').onclick=function(){ctx.clearRect(0,0,cv.width,cv.height);csigned=false;$e('csl').style.display='none';};
+      function cxy(e){var r=cv.getBoundingClientRect(),s=e.touches?e.touches[0]:e;return{x:Math.round(s.clientX-r.left),y:Math.round(s.clientY-r.top)};}
+      cv.onmousedown=cv.ontouchstart=function(e){
+        e.preventDefault();cdr=true;
+        var p=cxy(e);
+        currentStroke=[p];
+        ctx.beginPath();ctx.moveTo(p.x,p.y);
+      };
+      cv.onmousemove=cv.ontouchmove=function(e){
+        e.preventDefault();if(!cdr)return;
+        var p=cxy(e);
+        currentStroke.push(p);
+        ctx.lineTo(p.x,p.y);ctx.stroke();
+        csigned=true;$e('csl').style.display='inline';
+      };
+      cv.onmouseup=cv.ontouchend=function(){
+        if(cdr&&currentStroke.length>0){
+          signStrokes.push(currentStroke.slice());
+          currentStroke=[];
+        }
+        cdr=false;
+      };
+      $e('cclr').onclick=function(){
+        ctx.clearRect(0,0,cv.width,cv.height);
+        csigned=false;signStrokes=[];currentStroke=[];
+        $e('csl').style.display='none';
+      };
       $e('savesignbtn').onclick=function(){
         if(!csigned){alert('署名を記入してください');return;}
         var now=new Date();
         a.client_sign=cv.toDataURL();
         a.client_signed_at=now.toLocaleString('ja-JP');
         a.settlement_date=now.toISOString().slice(0,10);
+        // 座標データをcanvasサイズと一緒に保存
+        a.client_sign_strokes={
+          strokes: signStrokes,
+          canvasWidth: cv.width,
+          canvasHeight: cv.height,
+          capturedAt: now.toISOString()
+        };
         a.status='signed';
         sv();
-        updateSheet(a.id, {status:'signed', settlement_date:a.settlement_date, client_sign:a.client_sign, client_signed_at:a.client_signed_at});
+        updateSheet(a.id, {
+          status:'signed',
+          settlement_date:a.settlement_date,
+          client_sign:a.client_sign,
+          client_signed_at:a.client_signed_at,
+          client_sign_strokes: JSON.stringify(a.client_sign_strokes)
+        });
         clsM();shD(id);renderAdminList();
       };
     }
