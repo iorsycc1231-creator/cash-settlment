@@ -492,23 +492,67 @@ function analyzeAll(){
     fetch(GAS_URL, {method:'POST', body: body})
     .then(function(res){ return res.text(); })
     .then(function(txt){
-      var d = JSON.parse(txt);
+      console.log('GAS analyze response:', txt);
+      var d;
+      try { d = JSON.parse(txt); } catch(e) { throw new Error('JSONパース失敗: '+txt.slice(0,200)); }
       if(d.error){ throw new Error(d.error); }
-      r.data=d;
+      // 数値フィールドを確実に変換
+      d.total = Number(d.total) || 0;
+      d.tax_8 = Number(d.tax_8) || 0;
+      d.tax_10 = Number(d.tax_10) || 0;
+      if(d.items) d.items = d.items.map(function(it){
+        it.amount = Number(it.amount) || 0;
+        return it;
+      });
+      r.data = d;
       next(i+1);
     })
     .catch(function(err){
       var msg = err && err.message ? err.message : '不明なエラー';
+      console.error('analyze error:', msg);
       $e('area').innerHTML=
         '<div style="text-align:center;padding:40px 20px">'+
         '<div style="font-size:40px;margin-bottom:12px">⚠️</div>'+
-        '<div style="font-size:15px;font-weight:700;color:#dc2626;margin-bottom:8px">解析エラー</div>'+
-        '<div style="font-size:13px;color:#6b7280;margin-bottom:20px;word-break:break-all">'+msg+'</div>'+
-        '<button class="btn bw" onclick="showUpload()" style="max-width:240px;margin:0 auto">← 戻る</button>'+
+        '<div style="font-size:15px;font-weight:700;color:#dc2626;margin-bottom:8px">解析エラー（レシート '+(i+1)+'枚目）</div>'+
+        '<div style="font-size:12px;color:#6b7280;margin-bottom:20px;word-break:break-all;max-height:120px;overflow:auto">'+msg+'</div>'+
+        '<button class="btn bg" onclick="analyzeSkip('+i+')" style="max-width:280px;margin:0 auto 8px">このレシートをスキップして続行</button>'+
+        '<button class="btn bw" onclick="showUpload()" style="max-width:280px;margin:0 auto">← 最初に戻る</button>'+
         '</div>';
     });
   }
   next(0);
+}
+
+function analyzeSkip(i){
+  // 解析失敗したレシートは空データで続行、personはグローバルのCURRENT_PERSONを使用
+  var person = CURRENT_PERSON;
+  RECEIPTS[i].data = {store_name:'', date:'', invoice_number:'', items:[], tax_8:0, tax_10:0, total:0};
+  $e('area').innerHTML='<div style="text-align:center;padding:60px 20px;color:#6b7280"><div class="spin"></div><div id="prog">解析中... ('+(i+2)+'/'+RECEIPTS.length+')</div></div>';
+  function next(j){
+    if(j>=RECEIPTS.length){ showAllForms(person); return; }
+    if(RECEIPTS[j].data){ next(j+1); return; }
+    var p=$e('prog'); if(p) p.textContent='解析中... ('+(j+1)+'/'+RECEIPTS.length+')';
+    var r=RECEIPTS[j];
+    var body = JSON.stringify({action:'analyze', image:r.b64, mimeType:r.mime});
+    fetch(GAS_URL, {method:'POST', body: body})
+    .then(function(res){ return res.text(); })
+    .then(function(txt){
+      var d;
+      try { d = JSON.parse(txt); } catch(e) { throw new Error('JSONパース失敗'); }
+      if(d.error){ throw new Error(d.error); }
+      d.total = Number(d.total) || 0;
+      d.tax_8 = Number(d.tax_8) || 0;
+      d.tax_10 = Number(d.tax_10) || 0;
+      if(d.items) d.items = d.items.map(function(it){ it.amount = Number(it.amount)||0; return it; });
+      r.data = d;
+      next(j+1);
+    })
+    .catch(function(err){
+      RECEIPTS[j].data = {store_name:'', date:'', invoice_number:'', items:[], tax_8:0, tax_10:0, total:0};
+      next(j+1);
+    });
+  }
+  next(i+1);
 }
 
 function showAllForms(person){
@@ -830,8 +874,23 @@ function rA(){
   // 申請データをGASから取得（GASをメインソースとして使用）
   loadFromSheet(function(sheetData){
     if(sheetData && sheetData.length > 0){
-      // GASのデータで全件上書き（GASがマスター）
-      APPS = sheetData;
+      // GASのデータで全件上書き（GASがマスター）、数値フィールドを正規化
+      APPS = sheetData.map(function(a){
+        a.total = Number(a.total) || 0;
+        a.tax_8 = Number(a.tax_8) || 0;
+        a.tax_10 = Number(a.tax_10) || 0;
+        if(a.receipts) a.receipts = a.receipts.map(function(r){
+          r.total = Number(r.total) || 0;
+          r.tax_8 = Number(r.tax_8) || 0;
+          r.tax_10 = Number(r.tax_10) || 0;
+          if(r.items) r.items = r.items.map(function(it){
+            it.amount = Number(it.amount) || 0;
+            return it;
+          });
+          return r;
+        });
+        return a;
+      });
       sv();
     }
     // 入金データをGASから取得
@@ -843,8 +902,11 @@ function rA(){
     .then(function(r){return r.json();})
     .then(function(d){
       if(d.ok && d.data && d.data.length > 0){
-        // GASの入金データで上書き（GASがマスター）
-        DEPOSITS = d.data;
+        // GASの入金データで上書き（GASがマスター）、数値変換
+        DEPOSITS = d.data.map(function(dep){
+          dep.amount = Number(dep.amount) || 0;
+          return dep;
+        });
         localStorage.setItem('deposits', JSON.stringify(DEPOSITS));
       }
       renderAdminList();
@@ -854,8 +916,8 @@ function rA(){
 }
 
 function calcBalance(){
-  var depositSum = DEPOSITS.reduce(function(s,d){return s+(d.amount||0);},0);
-  var expenseSum = APPS.filter(isPaid).reduce(function(s,a){return s+(a.total||0);},0);
+  var depositSum = DEPOSITS.reduce(function(s,d){return s+(Number(d.amount)||0);},0);
+  var expenseSum = APPS.filter(isPaid).reduce(function(s,a){return s+(Number(a.total)||0);},0);
   return {
     balance: CARRYOVER + depositSum - expenseSum,
     depositSum: depositSum,
@@ -1085,7 +1147,7 @@ function renderDepHistory(){
 
 function renderAdminList(){
   updateBalanceUI();
-  var t=APPS.reduce(function(s,a){return s+(a.total||0);},0);
+  var t=APPS.reduce(function(s,a){return s+(Number(a.total)||0);},0);
   var p=APPS.filter(function(a){return !isPaid(a);}).length;
   $e('c1').textContent='¥'+fmt(t);
   $e('c2').textContent=p+'件';
