@@ -360,6 +360,12 @@ function sv(){localStorage.setItem('apps',JSON.stringify(APPS));}
 function $e(id){return document.getElementById(id);}
 function today(){return new Date().toISOString().slice(0,10);}
 function fmt(v){return Number(v||0).toLocaleString();}
+function recalcTot(ri){
+  var t=0,i=0;
+  while(true){var el=document.getElementById('r'+ri+'am'+i);if(!el)break;t+=parseInt(el.value)||0;i++;}
+  var tot=document.getElementById('r'+ri+'tot');
+  if(tot) tot.textContent='¥'+fmt(t);
+}
 function fmtDateJP(s){
   if(!s) return '';
   // ISO形式（2026-05-23T...）を YYYY-MM-DD に正規化してから表示
@@ -654,9 +660,12 @@ function showAllForms(person){
       row.className = 'irow';
       var opts = ACS.map(function(a){return '<option'+(a===ac?' selected':'')+'>'+a+'</option>';}).join('');
       row.innerHTML =
-        '<div style="display:flex;justify-content:space-between;margin-bottom:6px">' +
-        '<span style="font-weight:600">'+it.name+'</span>' +
-        '<span style="font-weight:700;color:#16a34a">¥'+fmt(it.amount)+'</span>' +
+        '<div style="display:flex;gap:6px;margin-bottom:6px">' +
+        '<input type="text" id="r'+ri+'nm'+i+'" value="'+(it.name||'').replace(/"/g,'&quot;')+'"' +
+        ' style="flex:1;padding:4px 7px;font-size:12px;font-weight:600;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit"/>' +
+        '<input type="number" id="r'+ri+'am'+i+'" value="'+it.amount+'" min="0"' +
+        ' style="width:88px;padding:4px 7px;font-size:12px;font-weight:700;color:#16a34a;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;text-align:right"' +
+        ' oninput="recalcTot('+ri+')" />' +
         '</div>' +
         '<span class="ttag">'+(it.tax_category||'不明')+'</span>' +
         '<select id="r'+ri+'ac'+i+'" style="width:100%;padding:6px 8px;font-size:12px;border:1px solid #e5e7eb;border-radius:6px;margin-top:4px;font-family:inherit">'+opts+'</select>';
@@ -668,7 +677,7 @@ function showAllForms(person){
     tbox.innerHTML =
       '<div class="tr"><span style="color:#6b7280">消費税(8%)</span><span>'+(d.tax_8?'¥'+fmt(d.tax_8):'—')+'</span></div>' +
       '<div class="tr"><span style="color:#6b7280">消費税(10%)</span><span>'+(d.tax_10?'¥'+fmt(d.tax_10):'—')+'</span></div>' +
-      '<div class="tr"><span style="font-weight:700">小計</span><span style="font-weight:700;color:#dc2626">¥'+fmt(d.total)+'</span></div>';
+      '<div class="tr"><span style="font-weight:700">小計</span><span style="font-weight:700;color:#dc2626" id="r'+ri+'tot">¥'+fmt(d.total)+'</span></div>';
     card.appendChild(tbox);
     el.appendChild(card);
   });
@@ -749,10 +758,14 @@ function showAllForms(person){
         date:$e('r'+ri+'date').value,
         invoice:$e('r'+ri+'inv').value,
         items:(d.items||[]).map(function(it,i){
-          var el=$e('r'+ri+'ac'+i);
-          return {name:it.name,amount:it.amount,tax_category:it.tax_category,account:el?el.value:'雑費'};
+          var acEl=$e('r'+ri+'ac'+i);
+          var nmEl=$e('r'+ri+'nm'+i);
+          var amEl=$e('r'+ri+'am'+i);
+          return {name:nmEl?nmEl.value:it.name, amount:amEl?parseInt(amEl.value)||0:it.amount, tax_category:it.tax_category, account:acEl?acEl.value:'雑費'};
         }),
-        tax_8:d.tax_8,tax_10:d.tax_10,total:d.total,b64:r.b64,mime:r.mime
+        tax_8:d.tax_8,tax_10:d.tax_10,
+        total:(d.items||[]).reduce(function(s,it,i){var amEl=$e('r'+ri+'am'+i);return s+(amEl?parseInt(amEl.value)||0:it.amount);},0),
+        b64:r.b64,mime:r.mime
       };
     });
     showConfirm({
