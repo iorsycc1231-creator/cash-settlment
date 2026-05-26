@@ -200,7 +200,6 @@ hr{border:none;border-top:1px solid #e5e7eb;margin:12px 0}
       <div style="background:#fef3c7;border:2px solid #fcd34d;border-radius:12px;padding:16px;margin-bottom:16px;font-size:13px;color:#92400e;line-height:1.7">
         ⚠️ 締め処理を実行すると：<br>
         ・アプリ上の申請履歴・入金履歴がリセットされます<br>
-        ・スプレッドシートの記録は残ります<br>
         ・現在の残高が次月の前月繰越に自動設定されます
       </div>
       <div style="background:#f9fafb;border-radius:8px;padding:14px;margin-bottom:16px;font-size:13px">
@@ -209,8 +208,10 @@ hr{border:none;border-top:1px solid #e5e7eb;margin:12px 0}
         <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:#6b7280">出金合計</span><span style="font-weight:600;color:#dc2626" id="cm-exp">¥0</span></div>
         <div style="display:flex;justify-content:space-between;border-top:1px solid #e5e7eb;padding-top:8px;margin-top:4px"><span style="font-weight:700">残高（次月繰越へ）</span><span style="font-weight:700;font-size:16px" id="cm-bal">¥0</span></div>
       </div>
-      <label style="margin-top:0">対象月（記録用）</label>
-      <input type="month" id="close-month" style="margin-bottom:12px"/>
+      <div style="display:flex;justify-content:space-between;align-items:center;background:#f3f4f6;border-radius:8px;padding:12px 14px;margin-bottom:12px;font-size:13px">
+        <span style="color:#6b7280;font-weight:600">対象月</span>
+        <span style="font-weight:700;font-size:15px" id="close-month-label">—</span>
+      </div>
       <button onclick="execClose()" style="width:100%;padding:14px;background:#7c3aed;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">締め処理を実行する</button>
       <button onclick="closeCloseModal()" style="width:100%;padding:12px;background:#f3f4f6;color:#374151;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:8px">キャンセル</button>
     </div>
@@ -771,6 +772,28 @@ function showAllForms(person){
   confirmbtn.onclick = function(){
     if(!method){alert('精算方法を選択してください');return;}
     if(method==='now'&&!signed){alert('電子サインを記入してください');return;}
+
+    // 精算日ベースで月またぎチェック（精算日が今月以外なら警告）
+    var now = new Date();
+    var currentMonth = now.getFullYear()+'-'+('0'+(now.getMonth()+1)).slice(-2);
+    // 既存APPSの精算日の最多月を取得
+    var existingMonths = {};
+    APPS.forEach(function(a){
+      var m = (a.settlement_date||'').slice(0,7);
+      if(m) existingMonths[m] = (existingMonths[m]||0)+1;
+    });
+    var dominantMonth = currentMonth;
+    var maxC = 0;
+    Object.keys(existingMonths).forEach(function(m){
+      if(existingMonths[m]>maxC){maxC=existingMonths[m];dominantMonth=m;}
+    });
+    // 今回の申請の精算日（今すぐ精算=今日、後で精算=後で確定）が既存の月と違う月になる可能性
+    if(method==='now' && dominantMonth && dominantMonth !== currentMonth){
+      var dp = dominantMonth.split('-');
+      var cp = currentMonth.split('-');
+      if(!confirm(dp[0]+'年'+parseInt(dp[1],10)+'月の申請が既にあります。\n今日（'+cp[0]+'年'+parseInt(cp[1],10)+'月）に精算すると月をまたぎます。\n先に締め処理を行ってください。\n\nこのまま申請しますか？')){return;}
+    }
+
     var signData=null;
     if(method==='now'){try{signData=$e('cvs').toDataURL();}catch(e){}}
     var receiptsSnap = RECEIPTS.map(function(r,ri){
@@ -1063,62 +1086,48 @@ function buildSeisanshoHTML(a){
   }
 
   var dateStr = a.settlement_date || a.date || today();
-  var TOTAL_ROWS = 8;
 
-  // ---- 明細行を組み立て ----
-  var lines = [];
-  if(a.receipts && a.receipts.length > 0){
-    a.receipts.forEach(function(r){
-      var txDate = mdLabel(r.date || dateStr);
-      if(r.items && r.items.length > 0){
-        r.items.forEach(function(it){
-          lines.push({
-            date: txDate,
-            account: it.account || '',
-            amount: it.amount,
-            name: it.name + (r.store ? ' ('+r.store+')' : ''),
-            qty: 1
-          });
-        });
-      } else {
-        lines.push({date:txDate, account:'', amount:r.total||0, name:r.store||'', qty:1});
-      }
-    });
-  } else if(a.items && a.items.length > 0){
-    var txDate = mdLabel(dateStr);
-    a.items.forEach(function(it){
-      lines.push({
-        date: txDate,
-        account: it.account || '',
-        amount: it.amount,
-        name: it.name + (a.store ? ' ('+a.store+')' : ''),
-        qty: 1
-      });
-    });
-  } else {
-    lines.push({date:mdLabel(dateStr), account:'', amount:a.total||0, name:a.store||'', qty:1});
-  }
+  // ---- レシートごとにセクションを組み立て ----
+  var receiptSections = '';
+  var receipts = (a.receipts && a.receipts.length > 0) ? a.receipts : [{
+    store: a.store, date: dateStr, items: a.items||[], total: a.total
+  }];
 
-  var itemRows = '';
-  lines.forEach(function(l){
-    itemRows +=
-      '<tr style="height:17px">'+
-      '<td style="border:1px solid #555;padding:2px 4px;text-align:center;white-space:nowrap">'+l.date+'</td>'+
-      '<td style="border:1px solid #555;padding:2px 4px">'+l.account+'</td>'+
-      '<td style="border:1px solid #555;padding:2px 4px;text-align:right;white-space:nowrap">'+fmt(l.amount)+'</td>'+
-      '<td style="border:1px solid #555;padding:2px 4px">'+l.name+'</td>'+
-      '<td style="border:1px solid #555;padding:2px 4px;text-align:center">'+l.qty+'</td>'+
-      '</tr>';
+  receipts.forEach(function(r, ri){
+    var txDate = mdLabel(r.date || dateStr);
+    var itemRows = '';
+    var items = r.items && r.items.length > 0 ? r.items : [{name: r.store||'', amount: r.total||0, account:''}];
+
+    items.forEach(function(it){
+      var label = it.name + (it.account ? '（'+it.account+'）' : '');
+      itemRows +=
+        '<tr>'+
+        '<td style="border:1px solid #555;padding:2px 6px;white-space:nowrap;text-align:center">'+txDate+'</td>'+
+        '<td style="border:1px solid #555;padding:2px 6px">'+label+'</td>'+
+        '<td style="border:1px solid #555;padding:2px 6px;text-align:right;white-space:nowrap">¥'+fmt(it.amount)+'</td>'+
+        '</tr>';
+    });
+
+    receiptSections +=
+      '<div style="margin-bottom:8px">'+
+      '<div style="font-size:10px;font-weight:700;background:#f3f4f6;padding:2px 6px;border:1px solid #aaa;margin-bottom:0">'+
+        'レシート '+(ri+1)+' ／ '+(r.store||'—')+
+      '</div>'+
+      '<table style="width:100%;border-collapse:collapse;font-size:10.5px;table-layout:fixed">'+
+        '<colgroup><col style="width:54px"/><col/><col style="width:72px"/></colgroup>'+
+        '<thead><tr style="background:#fff">'+
+          '<th style="border:1px solid #555;padding:2px 4px;text-align:center">取引日</th>'+
+          '<th style="border:1px solid #555;padding:2px 4px;text-align:center">内　訳</th>'+
+          '<th style="border:1px solid #555;padding:2px 4px;text-align:center">金　額</th>'+
+        '</tr></thead>'+
+        '<tbody>'+itemRows+'</tbody>'+
+        '<tfoot><tr>'+
+          '<td colspan="2" style="border:1px solid #555;padding:2px 6px;font-weight:700;text-align:right">小計</td>'+
+          '<td style="border:1px solid #555;padding:2px 6px;text-align:right;font-weight:700">¥'+fmt(r.total||0)+'</td>'+
+        '</tr></tfoot>'+
+      '</table>'+
+      '</div>';
   });
-  for(var i=lines.length; i<TOTAL_ROWS; i++){
-    itemRows += '<tr style="height:17px">'+
-      '<td style="border:1px solid #555">&nbsp;</td>'+
-      '<td style="border:1px solid #555"></td>'+
-      '<td style="border:1px solid #555"></td>'+
-      '<td style="border:1px solid #555"></td>'+
-      '<td style="border:1px solid #555"></td>'+
-      '</tr>';
-  }
 
   // サインは1つ：今すぐ精算→a.sign、後で精算→a.client_sign
   var signData = (a.sign && a.sign.startsWith('data:')) ? a.sign
@@ -1137,7 +1146,7 @@ function buildSeisanshoHTML(a){
     // 宛先
     '<div style="font-size:11px;margin-bottom:2px">イソベ石油株式会社　御中</div>'+
 
-    // 期間（取引日〜月日）
+    // 期間
     '<div style="font-size:11px;margin-bottom:5px;border-bottom:1px solid #000;padding-bottom:2px">'+
       '<span style="font-size:13px;font-weight:700">'+
       (function(){var d=new Date(dateStr);return d.getMonth()+1;})()+
@@ -1147,34 +1156,19 @@ function buildSeisanshoHTML(a){
       '　〜　　　月　　　日'+
     '</div>'+
 
-    // 明細テーブル（勘定科目列追加）
-    '<table style="width:100%;border-collapse:collapse;font-size:10.5px;margin-bottom:5px;table-layout:fixed">'+
-      '<colgroup>'+
-        '<col style="width:52px"/>'+   // 取引日
-        '<col style="width:64px"/>'+   // 勘定科目
-        '<col style="width:60px"/>'+   // 金額
-        '<col/>'+                      // 内訳
-        '<col style="width:30px"/>'+   // 枚数
-      '</colgroup>'+
-      '<thead><tr style="background:#fff">'+
-        '<th style="border:1px solid #555;padding:3px 4px;text-align:center">取引日</th>'+
-        '<th style="border:1px solid #555;padding:3px 4px;text-align:center">勘定科目</th>'+
-        '<th style="border:1px solid #555;padding:3px 4px;text-align:center">金　額</th>'+
-        '<th style="border:1px solid #555;padding:3px 4px;text-align:center">内　訳</th>'+
-        '<th style="border:1px solid #555;padding:3px 4px;text-align:center">枚数</th>'+
-      '</tr></thead>'+
-      '<tbody>'+itemRows+'</tbody>'+
-      '<tfoot><tr>'+
-        '<td colspan="4" style="border:1px solid #555;padding:4px 8px;font-weight:700;font-size:12px">合計金額　¥　'+fmt(a.total)+'</td>'+
-        '<td style="border:1px solid #555"></td>'+
-      '</tr></tfoot>'+
-    '</table>'+
+    // レシートごとのセクション
+    receiptSections+
+
+    // 合計
+    '<div style="text-align:right;font-size:13px;font-weight:700;border-top:2px solid #000;padding-top:4px;margin-bottom:6px">'+
+      '合計金額　¥'+fmt(a.total)+
+    '</div>'+
 
     // 日付・受領文
     '<div style="text-align:center;font-size:11px;margin-bottom:2px">'+toReiwa(dateStr)+'</div>'+
     '<div style="font-size:11px;margin-bottom:5px">上記合計金額正に受領いたしました。</div>'+
 
-    // 精算者氏名＋サイン（横並び、画像のレイアウトに合わせる）
+    // 精算者氏名＋サイン
     '<div style="display:flex;align-items:flex-end;gap:8px">'+
       '<div style="font-size:11px;white-space:nowrap">精算者氏名</div>'+
       '<div style="border-bottom:1.5px solid #000;min-width:160px;padding-bottom:2px;display:flex;align-items:flex-end">'+
@@ -1406,11 +1400,28 @@ function openCloseModal(){
   $e('cm-exp').textContent = '¥'+fmt(b.expenseSum);
   $e('cm-bal').textContent = '¥'+fmt(b.balance);
   $e('cm-bal').style.color = b.balance >= 0 ? '#16a34a' : '#dc2626';
-  // 対象月を前月にデフォルト設定
-  var now = new Date();
-  var y = now.getMonth()===0 ? now.getFullYear()-1 : now.getFullYear();
-  var m = now.getMonth()===0 ? 12 : now.getMonth();
-  $e('close-month').value = y+'-'+('0'+m).slice(-2);
+  // 対象月 = 精算日（settlement_date）の最多月
+  var targetMonth = '';
+  if(APPS.length > 0){
+    var monthCount = {};
+    APPS.forEach(function(a){
+      var m = (a.settlement_date || '').slice(0,7);
+      if(m) monthCount[m] = (monthCount[m]||0) + 1;
+    });
+    var maxCount = 0;
+    Object.keys(monthCount).forEach(function(m){
+      if(monthCount[m] > maxCount){ maxCount = monthCount[m]; targetMonth = m; }
+    });
+  }
+  if(!targetMonth){
+    var now = new Date();
+    var y = now.getMonth()===0 ? now.getFullYear()-1 : now.getFullYear();
+    var m = now.getMonth()===0 ? 12 : now.getMonth();
+    targetMonth = y+'-'+('0'+m).slice(-2);
+  }
+  var parts = targetMonth.split('-');
+  $e('close-month-label').textContent = parts[0]+'年'+parseInt(parts[1],10)+'月';
+  $e('close-month-label').setAttribute('data-month', targetMonth);
   $e('close-step1').style.display='block';
   $e('close-step2').style.display='none';
   $e('close-ov').style.display='block';
@@ -1421,8 +1432,8 @@ function closeCloseModal(){
 }
 
 function execClose(){
-  var month = $e('close-month').value;
-  if(!month){alert('対象月を選択してください');return;}
+  var month = $e('close-month-label').getAttribute('data-month');
+  if(!month){alert('対象月が取得できません');return;}
   var b = calcBalance();
   var newCarryover = b.balance;
 
