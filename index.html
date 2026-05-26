@@ -823,15 +823,27 @@ function showConfirm(snap){
     var itemRows=r.items.map(function(it){
       return '<div class="crow"><span style="color:#6b7280">'+it.name+'</span><span style="font-weight:600">'+it.account+'　¥'+fmt(it.amount)+'</span></div>';
     }).join('');
+    // 税額が取れていない場合、total - items合計で推定
+    var itemsSum = r.items.reduce(function(s,it){return s+it.amount;},0);
+    var tax8  = r.tax_8  || 0;
+    var tax10 = r.tax_10 || 0;
+    var taxTotal = tax8 + tax10;
+    // APIが税額nullでtotalに税込が入っている場合のフォールバック
+    if(!tax8 && !tax10 && r.total && r.total > itemsSum){
+      taxTotal = r.total - itemsSum;
+    }
     rows+=
       '<div style="background:#f9fafb;border-radius:8px;padding:12px;margin-bottom:10px">'+
       '<div class="rbadge">レシート '+(ri+1)+'</div>'+
       '<div class="crow"><span style="color:#6b7280">支払先</span><span style="font-weight:600">'+(r.store||'—')+'</span></div>'+
       '<div class="crow"><span style="color:#6b7280">日付</span><span style="font-weight:600">'+(r.date||'—')+'</span></div>'+
       itemRows+
-      (r.tax_8?'<div class="tr" style="margin-top:4px"><span style="color:#6b7280">消費税(8%)</span><span>¥'+fmt(r.tax_8)+'</span></div>':'')+
-      (r.tax_10?'<div class="tr"><span style="color:#6b7280">消費税(10%)</span><span>¥'+fmt(r.tax_10)+'</span></div>':'')+
-      '<div class="tr" style="border-top:1px solid #e5e7eb;padding-top:6px;margin-top:2px"><span style="font-weight:700">小計</span><span style="font-weight:700;color:#dc2626">¥'+fmt(r.total)+'</span></div>'+
+      '<div style="border-top:1px solid #e5e7eb;margin-top:6px;padding-top:6px">'+
+      (tax8?'<div class="tr"><span style="color:#6b7280">消費税(8%)</span><span>¥'+fmt(tax8)+'</span></div>':'')+
+      (tax10?'<div class="tr"><span style="color:#6b7280">消費税(10%)</span><span>¥'+fmt(tax10)+'</span></div>':'')+
+      (!tax8&&!tax10&&taxTotal?'<div class="tr"><span style="color:#6b7280">消費税（推定）</span><span>¥'+fmt(taxTotal)+'</span></div>':'')+
+      '<div class="tr" style="margin-top:2px"><span style="font-weight:700">合計（税込）</span><span style="font-weight:700;color:#dc2626;font-size:15px">¥'+fmt(r.total)+'</span></div>'+
+      '</div>'+
       '</div>';
   });
   confCard.innerHTML=
@@ -839,7 +851,13 @@ function showConfirm(snap){
     '<div class="crow"><span style="color:#6b7280">申請者</span><span style="font-weight:600">'+snap.person+'</span></div>'+
     '<div class="crow"><span style="color:#6b7280">精算方法</span><span style="font-weight:600">'+(snap.method==='now'?'今すぐ精算':'後で精算')+'</span></div>'+
     '<div class="crow"><span style="color:#6b7280">レシート枚数</span><span style="font-weight:600">'+snap.receipts.length+'枚</span></div>'+
-    '<hr/>'+rows;
+    '<hr/>'+rows+
+    (snap.receipts.length>1?
+      '<div style="background:#1c1917;color:#fff;border-radius:8px;padding:12px 16px;margin-top:4px;display:flex;justify-content:space-between;align-items:center">'+
+      '<span style="font-weight:700;font-size:14px">合計</span>'+
+      '<span style="font-weight:700;font-size:20px;color:#86efac">¥'+fmt(snap.grandTotal)+'</span>'+
+      '</div>':
+    '');
   el.appendChild(confCard);
 
   var sndbtn=document.createElement('button');
