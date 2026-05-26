@@ -139,6 +139,7 @@ hr{border:none;border-top:1px solid #e5e7eb;margin:12px 0}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <div class="ct" style="margin-bottom:0">申請一覧</div>
       <button onclick="dlCSV()" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">CSV出力</button>
+      <button onclick="openReceiptTray()" style="background:#0891b2;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">🗂 台紙印刷</button>
       <button onclick="openCloseModal()" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">月次締め</button>
     </div>
     <!-- フィルター -->
@@ -352,12 +353,17 @@ var ACS = ['駐車代','タクシー代','飲料代','飲食代','打ち合わ�
 var AM = {
   '駐車場':'駐車代','パーキング':'駐車代',
   '交通':'タクシー代','タクシー':'タクシー代','uber':'タクシー代','Uber':'タクシー代',
-  '飲料':'飲料代',
+  '飲料':'飲料代','ドリンク':'飲料代','ジュース':'飲料代','カゴメ':'飲料代',
+  'お茶':'飲料代','緑茶':'飲料代','麦茶':'飲料代','ほうじ茶':'飲料代',
+  'コーヒー':'飲料代','コーラ':'飲料代','サイダー':'飲料代',
   'ティッシュ':'消耗品','トイレ':'消耗品','洗剤':'消耗品','作業着':'消耗品',
   '自賠責':'自賠責保険代'
 };
 function gac(n,storeName){
-  var t = (n||'')+(storeName||'');
+  var t = n||'';
+  var s = storeName||'';
+  // コーナンは全品目消耗品
+  if(s.indexOf('コーナン')>=0) return '消耗品';
   for(var k in AM) if(t.indexOf(k)>=0) return AM[k];
   return '雑費';
 }
@@ -1532,6 +1538,84 @@ function dlCSV(){
   link.click();
 }
 
+function openReceiptTray(){
+  var paid = APPS.filter(function(a){ return isPaid(a); });
+  if(!paid.length){ alert('精算完了の申請がありません'); return; }
+
+  // A4縦 2列×3行、各枠をA6相当に
+  var cols = 2, rows = 3, perPage = cols * rows;
+  var pages = [];
+  for(var i=0; i<paid.length; i+=perPage){
+    pages.push(paid.slice(i, i+perPage));
+  }
+
+  var pageHTML = pages.map(function(pageApps){
+    var cells = '';
+    for(var ci=0; ci<perPage; ci++){
+      var a = pageApps[ci];
+      if(a){
+        var rcptCount = a.receipts ? a.receipts.length : 1;
+        var stores = a.receipts ? a.receipts.map(function(r){return r.store||'';}).filter(Boolean).join('・') : (a.store||'');
+        cells +=
+          '<div class="tray-cell">'+
+          '<div class="tray-header">'+
+            '<div class="tray-id">'+a.id+'</div>'+
+            '<div class="tray-meta">'+
+              '<span class="tray-person">'+a.person+'</span>'+
+              '<span class="tray-date">'+(a.settlement_date||a.date||'')+'</span>'+
+            '</div>'+
+            '<div class="tray-store">'+stores+'</div>'+
+            '<div class="tray-amount">¥'+fmt(a.total)+'　<span class="tray-count">'+rcptCount+'枚</span></div>'+
+          '</div>'+
+          '<div class="tray-space"><span class="tray-hint">← レシートをここに貼付 →</span></div>'+
+          '</div>';
+      } else {
+        cells += '<div class="tray-cell tray-empty"></div>';
+      }
+    }
+    return '<div class="tray-page">'+cells+'</div>';
+  }).join('');
+
+  var html = '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"/>'+
+    '<title>レシート貼付台紙</title>'+
+    '<style>'+
+    '@import url(\'https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;600;700&display=swap\');'+
+    '*{box-sizing:border-box;margin:0;padding:0}'+
+    'body{font-family:\'Noto Sans JP\',sans-serif;background:#fff;color:#000}'+
+    '.no-print{text-align:center;padding:16px;background:#f3f4f6}'+
+    '.no-print button{padding:10px 28px;background:#1c1917;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin:0 6px}'+
+    '.no-print .sub{font-size:12px;color:#6b7280;margin-top:8px}'+
+    '.tray-page{display:grid;grid-template-columns:1fr 1fr;gap:0;width:210mm;min-height:297mm;padding:8mm;page-break-after:always;border-bottom:1px dashed #ccc}'+
+    '.tray-cell{border:2px dashed #374151;border-radius:4px;margin:4mm;display:flex;flex-direction:column;min-height:128mm;overflow:hidden}'+
+    '.tray-cell.tray-empty{border-color:#e5e7eb}'+
+    '.tray-header{background:#1c1917;color:#fff;padding:6px 10px}'+
+    '.tray-id{font-size:11px;font-weight:700;letter-spacing:1px;color:#86efac;margin-bottom:3px}'+
+    '.tray-meta{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px}'+
+    '.tray-person{font-size:14px;font-weight:700}'+
+    '.tray-date{font-size:10px;color:#9ca3af}'+
+    '.tray-store{font-size:10px;color:#d1d5db;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'+
+    '.tray-amount{font-size:16px;font-weight:700;color:#fde68a}'+
+    '.tray-count{font-size:10px;color:#9ca3af;font-weight:400}'+
+    '.tray-space{flex:1;display:flex;align-items:center;justify-content:center;background:#fafafa}'+
+    '.tray-hint{font-size:10px;color:#d1d5db;letter-spacing:1px}'+
+    '@media print{'+
+    '.no-print{display:none!important}'+
+    '.tray-page{page-break-after:always;border:none}'+
+    'body{-webkit-print-color-adjust:exact;print-color-adjust:exact}'+
+    '}'+
+    '</style></head><body>'+
+    '<div class="no-print">'+
+      '<button onclick="window.print()">🖨 印刷する</button>'+
+      '<button onclick="window.close()">✕ 閉じる</button>'+
+      '<div class="sub">精算完了 '+paid.length+'件 ／ '+pages.length+'ページ</div>'+
+    '</div>'+
+    pageHTML+
+    '</body></html>';
+
+  var win = window.open('', '_blank');
+  win.document.write(html);
+  win.document.close();
+}
 // 起動時にGASからlast_seqを同期してからアプリ開始
 (function initSeqSync(){
   fetch(GAS_URL, {
