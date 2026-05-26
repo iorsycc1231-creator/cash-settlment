@@ -39,8 +39,16 @@ export default async function handler(req, res) {
 - totalは税込の実際の支払合計金額（「合計」「お会計」欄の金額）
 - tax_8：レシートに記載された8%消費税額。「外税額 8%」「消費税8%」「内消費税等8%」どの形式でも必ず読み取る。なければnull
 - tax_10：レシートに記載された10%消費税額。同様に必ず読み取る。なければnull
+- accountは以下のルールで判定する：
+  ・店名や品目に「駐車場」「パーキング」→「駐車代」
+  ・「交通」「タクシー」「Uber」「uber」→「タクシー代」
+  ・「飲料」「ドリンク」「ジュース」「水」「お茶」「コーヒー」→「飲料代」
+  ・飲食店（レストラン・カフェ・定食・ラーメン・寿司・居酒屋等）→「飲食代」
+  ・「ティッシュ」「トイレ」「洗剤」「作業着」「手袋」「軍手」→「消耗品」
+  ・「自賠責」→「自賠責保険代」
+  ・上記以外→「雑費」
 
-{"store_name":"店名","invoice_number":"T+13桁またはnull","date":"YYYY-MM-DD","items":[{"name":"印字文字そのまま","amount":数値(値引きは必ず負の数),"tax_category":"10%標準または8%軽減または非課税"}],"tax_8":数値またはnull,"tax_10":数値またはnull,"total":数値}` }
+{"store_name":"店名","invoice_number":"T+13桁またはnull","date":"YYYY-MM-DD","items":[{"name":"印字文字そのまま","amount":数値(値引きは必ず負の数),"tax_category":"10%標準または8%軽減または非課税","account":"駐車代/タクシー代/飲料代/飲食代/消耗品/自賠責保険代/雑費のいずれか"}],"tax_8":数値またはnull,"tax_10":数値またはnull,"total":数値}` }
           ]
         }]
       })
@@ -59,6 +67,7 @@ export default async function handler(req, res) {
     const parsed = JSON.parse(text.slice(s, e + 1));
 
     // 値引き行（amountが負）を直前の品目に統合する
+    const validAccounts = ['駐車代','タクシー代','飲料代','飲食代','打ち合わせ','残業食事代','草刈り食事代','消耗品','自賠責保険代','不明','雑費','会費'];
     if (Array.isArray(parsed.items)) {
       // フォールバック：名前に割引キーワードがあるのにamountが正の場合は強制的にマイナスにする
       const discountPattern = /割引|値引|クーポン|ポイント|code\d+|discount/i;
@@ -80,7 +89,10 @@ export default async function handler(req, res) {
           merged.push({ ...item, amount });
         }
       }
-      parsed.items = merged;
+      parsed.items = merged.map(item => ({
+        ...item,
+        account: validAccounts.includes(item.account) ? item.account : '雑費'
+      }));
     }
 
     return res.status(200).json(parsed);
