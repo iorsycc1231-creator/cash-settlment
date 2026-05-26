@@ -348,9 +348,19 @@ function loadFromSheet(cb) {
   .catch(function(e){console.log('Sheet load error:', e); cb(null);});
 }
 
-var ACS = ['会議費','交際費','旅費交通費','消耗品費','事務用品費','通信費','新聞図書費','厚生費','雑費'];
-var AM = {'弁当':'会議費','サンドイッチ':'会議費','おにぎり':'会議費','お茶':'厚生費','コーヒー':'厚生費','飲料':'厚生費','ティッシュ':'消耗品費','洗剤':'消耗品費','ボールペン':'事務用品費','ノート':'事務用品費','電車':'旅費交通費','バス':'旅費交通費','タクシー':'旅費交通費','切手':'通信費','書籍':'新聞図書費'};
-function gac(n){for(var k in AM)if(n.indexOf(k)>=0)return AM[k];return '雑費';}
+var ACS = ['駐車代','タクシー代','飲料代','飲食代','打ち合わせ','残業食事代','草刈り食事代','消耗品','自賠責保険代','不明','雑費','会費'];
+var AM = {
+  '駐車場':'駐車代','パーキング':'駐車代',
+  '交通':'タクシー代','タクシー':'タクシー代','uber':'タクシー代','Uber':'タクシー代',
+  '飲料':'飲料代',
+  'ティッシュ':'消耗品','トイレ':'消耗品','洗剤':'消耗品','作業着':'消耗品',
+  '自賠責':'自賠責保険代'
+};
+function gac(n,storeName){
+  var t = (n||'')+(storeName||'');
+  for(var k in AM) if(t.indexOf(k)>=0) return AM[k];
+  return '雑費';
+}
 function gid(){
   var d=new Date();
   var seq = (Number(localStorage.getItem('last_seq')||0)) + 1;
@@ -416,7 +426,7 @@ function showUpload(){
 
   var sel = document.createElement('select');
   sel.id = 'up-person';
-  sel.innerHTML = '<option value="">-- 選択してください --</option><option>田中</option><option>佐藤</option><option>大橋</option>';
+  sel.innerHTML = '<option value="">-- 選択してください --</option><option>村井数正</option><option>松村武志</option><option>寺沢守弘</option><option>山田麻里子</option><option>菅生勇理愛</option>';
   card.appendChild(sel);
 
   var msg = document.createElement('div');
@@ -576,10 +586,9 @@ function analyzeAll(){
     fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:r.b64,mimeType:r.mime})})
     .then(function(res){if(!res.ok)return res.json().then(function(e){throw new Error(e.error||res.status);});return res.json();})
     .then(function(d){r.data=d; next(i+1);})
-    .catch(function(){
-      r.data={store_name:'サンプル商店'+(i+1),date:today(),invoice_number:'',
-        items:[{name:'商品'+(i+1),amount:500*(i+1),tax_category:'10%標準'}],
-        tax_8:0,tax_10:Math.floor(50*(i+1)),total:500*(i+1)};
+    .catch(function(err){
+      r.error = err ? (err.message||String(err)) : '不明なエラー';
+      r.data = null;
       next(i+1);
     });
   }
@@ -646,6 +655,17 @@ function showAllForms(person){
     img.src = r.preview;
     img.style.cssText = 'width:100%;max-height:160px;object-fit:cover;border-radius:8px;margin-bottom:12px';
     card.appendChild(img);
+
+    // エラー時はエラー内容を表示して以降の入力欄をスキップ
+    if(r.error){
+      var errDiv = document.createElement('div');
+      errDiv.style.cssText = 'background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:12px;color:#dc2626;font-size:13px;line-height:1.6';
+      errDiv.innerHTML = '⚠️ 読み込みエラー<br><span style="font-size:12px;color:#6b7280">'+r.error+'</span><br><br>'+
+        '<button onclick="RECEIPTS.splice('+ri+',1);showAllForms(CURRENT_PERSON)" style="padding:6px 14px;background:#dc2626;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit">このレシートを削除</button>';
+      card.appendChild(errDiv);
+      el.appendChild(card);
+      return;
+    }
 
     var storeLbl = document.createElement('label');
     storeLbl.textContent = '支払先';
@@ -1086,50 +1106,32 @@ function buildSeisanshoHTML(a){
   }
 
   var dateStr = a.settlement_date || a.date || today();
-
-  // ---- レシートごとにセクションを組み立て ----
-  var receiptSections = '';
   var receipts = (a.receipts && a.receipts.length > 0) ? a.receipts : [{
     store: a.store, date: dateStr, items: a.items||[], total: a.total
   }];
 
-  receipts.forEach(function(r, ri){
+  // レシートごとに1行：取引日・勘定科目（店名）・金額
+  var itemRows = '';
+  receipts.forEach(function(r){
     var txDate = mdLabel(r.date || dateStr);
-    var itemRows = '';
-    var items = r.items && r.items.length > 0 ? r.items : [{name: r.store||'', amount: r.total||0, account:''}];
-
-    items.forEach(function(it){
-      var label = it.name + (it.account ? '（'+it.account+'）' : '');
-      itemRows +=
-        '<tr>'+
-        '<td style="border:1px solid #555;padding:2px 6px;white-space:nowrap;text-align:center">'+txDate+'</td>'+
-        '<td style="border:1px solid #555;padding:2px 6px">'+label+'</td>'+
-        '<td style="border:1px solid #555;padding:2px 6px;text-align:right;white-space:nowrap">¥'+fmt(it.amount)+'</td>'+
-        '</tr>';
-    });
-
-    receiptSections +=
-      '<div style="margin-bottom:8px">'+
-      '<div style="font-size:10px;font-weight:700;background:#f3f4f6;padding:2px 6px;border:1px solid #aaa;margin-bottom:0">'+
-        'レシート '+(ri+1)+' ／ '+(r.store||'—')+
-      '</div>'+
-      '<table style="width:100%;border-collapse:collapse;font-size:10.5px;table-layout:fixed">'+
-        '<colgroup><col style="width:54px"/><col/><col style="width:72px"/></colgroup>'+
-        '<thead><tr style="background:#fff">'+
-          '<th style="border:1px solid #555;padding:2px 4px;text-align:center">取引日</th>'+
-          '<th style="border:1px solid #555;padding:2px 4px;text-align:center">内　訳</th>'+
-          '<th style="border:1px solid #555;padding:2px 4px;text-align:center">金　額</th>'+
-        '</tr></thead>'+
-        '<tbody>'+itemRows+'</tbody>'+
-        '<tfoot><tr>'+
-          '<td colspan="2" style="border:1px solid #555;padding:2px 6px;font-weight:700;text-align:right">小計</td>'+
-          '<td style="border:1px solid #555;padding:2px 6px;text-align:right;font-weight:700">¥'+fmt(r.total||0)+'</td>'+
-        '</tr></tfoot>'+
-      '</table>'+
-      '</div>';
+    // 勘定科目を集約（複数あれば最初のものを代表に）
+    var accounts = [];
+    if(r.items && r.items.length > 0){
+      r.items.forEach(function(it){
+        var ac = it.account||'雑費';
+        if(accounts.indexOf(ac) < 0) accounts.push(ac);
+      });
+    }
+    var accountLabel = accounts.length > 0 ? accounts.join('・') : '雑費';
+    var content = accountLabel + (r.store ? '（'+r.store+'）' : '');
+    itemRows +=
+      '<tr>'+
+      '<td style="border:1px solid #555;padding:3px 6px;text-align:center;white-space:nowrap">'+txDate+'</td>'+
+      '<td style="border:1px solid #555;padding:3px 6px">'+content+'</td>'+
+      '<td style="border:1px solid #555;padding:3px 6px;text-align:right;white-space:nowrap">¥'+fmt(r.total||0)+'</td>'+
+      '</tr>';
   });
 
-  // サインは1つ：今すぐ精算→a.sign、後で精算→a.client_sign
   var signData = (a.sign && a.sign.startsWith('data:')) ? a.sign
                : (a.client_sign && a.client_sign.startsWith('data:')) ? a.client_sign
                : null;
@@ -1139,48 +1141,46 @@ function buildSeisanshoHTML(a){
 
   return (
     '<div style="position:relative;padding:0;font-size:11px;line-height:1.4;color:#000;font-family:\'Noto Sans JP\',sans-serif">'+
-
-    // タイトル
     '<div style="text-align:center;font-size:16px;font-weight:700;letter-spacing:6px;margin-bottom:5px">《 精　算　書 》</div>'+
-
-    // 宛先
     '<div style="font-size:11px;margin-bottom:2px">イソベ石油株式会社　御中</div>'+
-
-    // 期間
     '<div style="font-size:11px;margin-bottom:5px;border-bottom:1px solid #000;padding-bottom:2px">'+
       '<span style="font-size:13px;font-weight:700">'+
       (function(){var d=new Date(dateStr);return d.getMonth()+1;})()+
-      '月'+
-      (function(){var d=new Date(dateStr);return d.getDate();})()+
-      '日</span>'+
-      '　〜　　　月　　　日'+
+      '月'+(function(){var d=new Date(dateStr);return d.getDate();})()+
+      '日</span>　〜　　　月　　　日'+
     '</div>'+
-
-    // レシートごとのセクション
-    receiptSections+
-
-    // 合計
-    '<div style="text-align:right;font-size:13px;font-weight:700;border-top:2px solid #000;padding-top:4px;margin-bottom:6px">'+
-      '合計金額　¥'+fmt(a.total)+
-    '</div>'+
-
-    // 日付・受領文
+    '<table style="width:100%;border-collapse:collapse;font-size:10.5px;margin-bottom:6px;table-layout:fixed">'+
+      '<colgroup><col style="width:54px"/><col/><col style="width:72px"/></colgroup>'+
+      '<thead><tr style="background:#fff">'+
+        '<th style="border:1px solid #555;padding:3px 4px;text-align:center">取引日</th>'+
+        '<th style="border:1px solid #555;padding:3px 4px;text-align:center">内　訳</th>'+
+        '<th style="border:1px solid #555;padding:3px 4px;text-align:center">金　額</th>'+
+      '</tr></thead>'+
+      '<tbody>'+itemRows+'</tbody>'+
+      '<tfoot><tr>'+
+        '<td colspan="2" style="border:1px solid #555;padding:4px 8px;font-weight:700;text-align:right;font-size:12px">合計金額</td>'+
+        '<td style="border:1px solid #555;padding:4px 8px;text-align:right;font-weight:700;font-size:12px">¥'+fmt(a.total)+'</td>'+
+      '</tr></tfoot>'+
+    '</table>'+
     '<div style="text-align:center;font-size:11px;margin-bottom:2px">'+toReiwa(dateStr)+'</div>'+
     '<div style="font-size:11px;margin-bottom:5px">上記合計金額正に受領いたしました。</div>'+
-
-    // 精算者氏名＋サイン
     '<div style="display:flex;align-items:flex-end;gap:8px">'+
       '<div style="font-size:11px;white-space:nowrap">精算者氏名</div>'+
       '<div style="border-bottom:1.5px solid #000;min-width:160px;padding-bottom:2px;display:flex;align-items:flex-end">'+
         (signEl ? signEl : '<span style="font-size:13px;font-weight:700">'+a.person+'</span>')+
       '</div>'+
     '</div>'+
-
     '<div style="position:absolute;bottom:2px;right:8px;font-size:9px;color:#aaa">'+a.id+'</div>'+
     '</div>'
   );
 }
 function openPrintModal(id){
+  // 未精算の申請がある場合に警告
+  var unpaid = APPS.filter(function(x){return x.id!==id && (x.status==='unsigned'||x.status==='');});
+  if(unpaid.length > 0){
+    var names = unpaid.map(function(x){return x.person+'（'+x.date+'）';}).join('、');
+    if(!confirm('⚠️ 未精算の申請が'+unpaid.length+'件あります。\n'+names+'\n\nこのまま印刷しますか？')){return;}
+  }
   var a = APPS.find(function(x){return x.id===id;});
   if(!a) return;
   var html = buildSeisanshoHTML(a);
@@ -1528,7 +1528,27 @@ function dlCSV(){
   link.click();
 }
 
-showUpload();
+// 起動時にGASからlast_seqを同期してからアプリ開始
+(function initSeqSync(){
+  fetch(GAS_URL, {
+    method:'POST',
+    headers:{'Content-Type':'text/plain'},
+    body:JSON.stringify({action:'load'})
+  })
+  .then(function(r){return r.json();})
+  .then(function(res){
+    if(res && res.last_seq !== undefined){
+      var localSeq = Number(localStorage.getItem('last_seq')||0);
+      var gasSeq   = Number(res.last_seq);
+      var maxSeq   = Math.max(localSeq, gasSeq);
+      localStorage.setItem('last_seq', String(maxSeq));
+    }
+  })
+  .catch(function(){})
+  .finally(function(){
+    showUpload();
+  });
+})();
 </script>
 </body>
 </html>
