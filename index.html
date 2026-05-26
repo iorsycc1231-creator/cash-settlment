@@ -829,7 +829,9 @@ function showConfirm(snap){
       '<div class="crow"><span style="color:#6b7280">支払先</span><span style="font-weight:600">'+(r.store||'—')+'</span></div>'+
       '<div class="crow"><span style="color:#6b7280">日付</span><span style="font-weight:600">'+(r.date||'—')+'</span></div>'+
       itemRows+
-      '<div class="tr" style="margin-top:4px"><span style="color:#6b7280">小計</span><span style="font-weight:700;color:#dc2626">¥'+fmt(r.total)+'</span></div>'+
+      (r.tax_8?'<div class="tr" style="margin-top:4px"><span style="color:#6b7280">消費税(8%)</span><span>¥'+fmt(r.tax_8)+'</span></div>':'')+
+      (r.tax_10?'<div class="tr"><span style="color:#6b7280">消費税(10%)</span><span>¥'+fmt(r.tax_10)+'</span></div>':'')+
+      '<div class="tr" style="border-top:1px solid #e5e7eb;padding-top:6px;margin-top:2px"><span style="font-weight:700">小計</span><span style="font-weight:700;color:#dc2626">¥'+fmt(r.total)+'</span></div>'+
       '</div>';
   });
   confCard.innerHTML=
