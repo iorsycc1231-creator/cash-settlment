@@ -31,14 +31,14 @@ export default async function handler(req, res) {
 重要ルール：
 - nameはレシートに印字された文字を一字一句そのままコピー。要約・翻訳・省略・変換禁止
 - カタカナは特に正確に：ン/ツ/ソ/リ/ー/ポ/ボ/パ/バなど濁点・半濁点・長音符を正確に読む
-- amountは税込金額の数値のみ（カンマなし）
-- 値引き・割引・クーポン・ポイント値引きなどのマイナス行は必ずitemsに含め、amountを負の数値で返す（例：-100）
-- tax_categoryは「※」「★」「軽」マークがあれば「8%軽減」、なければ「10%標準」。値引き行は直前の品目と同じtax_categoryにする
+- amountは税込金額の数値のみ（カンマなし、符号あり）
+- 【最重要】「割引」「値引」「クーポン」「Code128」「ポイント」などのマイナス行は、レシートに「-」がついていれば必ずamountを負の整数で返す。例：レシートに「-49」とあれば amount: -49
+- tax_categoryは「※」「★」「軽」マークがあれば「8%軽減」、なければ「10%標準」
 - invoice_numberは「T」で始まる13桁の番号、なければnull
 - dateはYYYY-MM-DD形式（令和8年=2026年、令和7年=2025年）
 - totalは値引き後の実際の支払合計金額
 
-{"store_name":"店名","invoice_number":"T+13桁またはnull","date":"YYYY-MM-DD","items":[{"name":"印字文字そのまま","amount":数値(値引きはマイナス),"tax_category":"10%標準または8%軽減または非課税"}],"tax_8":数値またはnull,"tax_10":数値またはnull,"total":数値}` }
+{"store_name":"店名","invoice_number":"T+13桁またはnull","date":"YYYY-MM-DD","items":[{"name":"印字文字そのまま","amount":数値(値引きは必ず負の数),"tax_category":"10%標準または8%軽減または非課税"}],"tax_8":数値またはnull,"tax_10":数値またはnull,"total":数値}` }
           ]
         }]
       })
@@ -58,6 +58,16 @@ export default async function handler(req, res) {
 
     // 値引き行（amountが負）を直前の品目に統合する
     if (Array.isArray(parsed.items)) {
+      // フォールバック：名前に割引キーワードがあるのにamountが正の場合は強制的にマイナスにする
+      const discountPattern = /割引|値引|クーポン|ポイント|code\d+|discount/i;
+      parsed.items = parsed.items.map(item => {
+        const amount = Number(item.amount) || 0;
+        if (discountPattern.test(item.name) && amount > 0) {
+          return { ...item, amount: -amount };
+        }
+        return { ...item, amount };
+      });
+
       const merged = [];
       for (const item of parsed.items) {
         const amount = Number(item.amount) || 0;
