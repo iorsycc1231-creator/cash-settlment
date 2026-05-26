@@ -1480,30 +1480,27 @@ function execClose(){
 }
 
 function dlCSV(){
-  // 入出金明細形式：日付・申請者・内容・金額（総額）・精算ステータス
   function esc(v){var s=String(v==null?'':v);return(s.indexOf(',')>=0||s.indexOf('"')>=0||s.indexOf('\n')>=0)?'"'+s.replace(/"/g,'""')+'"':s;}
   function stJa(s){
     if(s==='paid'||s==='精算済') return '精算完了';
     if(s==='signed') return 'サイン済（未精算）';
     return '未精算';
   }
-  // 日付を M/D 形式に変換（例：2025-05-23 → 5/23）
   function fmtDate(dateStr){
     if(!dateStr) return '';
-    try{
-      var d = new Date(dateStr);
-      if(isNaN(d.getTime())) return dateStr;
-      return (d.getMonth()+1)+'/'+(d.getDate());
-    }catch(e){return dateStr;}
+    try{var d=new Date(dateStr);if(isNaN(d.getTime()))return dateStr;return(d.getMonth()+1)+'/'+(d.getDate());}catch(e){return dateStr;}
   }
 
-  var rows = [['日付','申請者','内容','金額（総額）','精算ステータス']];
+  var rows = [['日付','申請者','内容','金額','精算ステータス']];
+
+  // 前月繰越
+  rows.push(['－','－','【前月繰越】', CARRYOVER, '－']);
 
   // 申請データ（申請単位・総額）
   APPS.forEach(function(a){
     var csvDate = fmtDate(a.settlement_date || a.date);
     var rcptCount = a.receipts ? a.receipts.length : 1;
-    rows.push([csvDate, a.person, rcptCount+'件レシート精算', a.total, stJa(a.status)]);
+    rows.push([csvDate, a.person, rcptCount+'件レシート精算', -a.total, stJa(a.status)]);
   });
 
   // 入金データ
@@ -1511,12 +1508,19 @@ function dlCSV(){
     rows.push([fmtDate(d.date), '－', '入金'+(d.memo?'（'+d.memo+'）':''), d.amount, '－']);
   });
 
-  // 日付昇順ソート（ヘッダー除く）
+  // 日付昇順ソート（ヘッダーと前月繰越除く）
   var header = rows.shift();
-  rows.sort(function(a,b){ return String(a[0]).localeCompare(String(b[0])); });
+  var carryRow = rows.shift();
+  rows.sort(function(a,b){return String(a[0]).localeCompare(String(b[0]));});
+
+  // 残高計算
+  var b = calcBalance();
+  rows.push(['－','－','【残高】', b.balance, '－']);
+
+  rows.unshift(carryRow);
   rows.unshift(header);
 
-  if(rows.length <= 1){alert('出力するデータがありません');return;}
+  if(rows.length <= 2){alert('出力するデータがありません');return;}
   var csv = '\uFEFF' + rows.map(function(r){return r.map(esc).join(',');}).join('\n');
   var link = document.createElement('a');
   link.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));
