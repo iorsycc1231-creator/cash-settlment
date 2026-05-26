@@ -975,7 +975,7 @@ function showDone(app){
 function rA(){
   // 読み込み中スピナー表示
   var al = $e('al');
-  if(al) al.innerHTML = '<div style="text-align:center;padding:40px 0"><div class="spin"></div><div style="color:#9ca3af;font-size:13px;margin-top:8px">スプレッドシートから読み込み中...</div></div>';
+  if(al) al.innerHTML = '<div style="text-align:center;padding:40px 0"><div class="spin"></div><div style="color:#9ca3af;font-size:13px;margin-top:8px">データ取得中...</div></div>';
 
   // GASから申請データ・繰越額を取得（最も信頼できるソース）
   loadFromSheet(function(res){
