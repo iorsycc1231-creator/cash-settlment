@@ -32,19 +32,13 @@ export default async function handler(req, res) {
 - nameはレシートに印字された文字を一字一句そのままコピー。要約・翻訳・省略・変換禁止
 - カタカナは特に正確に：ン/ツ/ソ/リ/ー/ポ/ボ/パ/バなど濁点・半濁点・長音符を正確に読む
 - amountは税込金額の数値のみ（カンマなし）
-- tax_categoryは「※」「★」「軽」マークがあれば「8%軽減」、なければ「10%標準」
+- 値引き・割引・クーポン・ポイント値引きなどのマイナス行は必ずitemsに含め、amountを負の数値で返す（例：-100）
+- tax_categoryは「※」「★」「軽」マークがあれば「8%軽減」、なければ「10%標準」。値引き行は直前の品目と同じtax_categoryにする
 - invoice_numberは「T」で始まる13桁の番号、なければnull
 - dateはYYYY-MM-DD形式（令和8年=2026年、令和7年=2025年）
-- totalは合計税込金額
+- totalは値引き後の実際の支払合計金額
 
-【値引き・割引の処理ルール】
-レシートに値引き・割引・クーポン・ポイント値引きなどマイナス行がある場合：
-- その直前の品目のamountから値引き額を引いた金額をその品目のamountとして記録する
-- 値引き行自体はitemsに含めない
-- 例：「商品A 500円」の次に「値引き -100円」がある場合 → items に {name:"商品A", amount:400, ...} のみ記録
-- 複数の値引きが同じ品目に続く場合はすべて合算してマイナスする
-
-{"store_name":"店名","invoice_number":"T+13桁またはnull","date":"YYYY-MM-DD","items":[{"name":"印字文字そのまま","amount":数値,"tax_category":"10%標準または8%軽減または非課税"}],"tax_8":数値またはnull,"tax_10":数値またはnull,"total":数値}` }
+{"store_name":"店名","invoice_number":"T+13桁またはnull","date":"YYYY-MM-DD","items":[{"name":"印字文字そのまま","amount":数値(値引きはマイナス),"tax_category":"10%標準または8%軽減または非課税"}],"tax_8":数値またはnull,"tax_10":数値またはnull,"total":数値}` }
           ]
         }]
       })
@@ -61,6 +55,22 @@ export default async function handler(req, res) {
     const s = text.indexOf('{'), e = text.lastIndexOf('}');
     if (s === -1 || e === -1) return res.status(500).json({ error: 'JSONが見つかりません' });
     const parsed = JSON.parse(text.slice(s, e + 1));
+
+    // 値引き行（amountが負）を直前の品目に統合する
+    if (Array.isArray(parsed.items)) {
+      const merged = [];
+      for (const item of parsed.items) {
+        const amount = Number(item.amount) || 0;
+        if (amount < 0 && merged.length > 0) {
+          // 直前の品目のamountからマイナス分を引く
+          merged[merged.length - 1].amount += amount;
+        } else {
+          merged.push({ ...item, amount });
+        }
+      }
+      parsed.items = merged;
+    }
+
     return res.status(200).json(parsed);
 
   } catch (e) {
