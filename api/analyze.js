@@ -26,7 +26,9 @@ export default async function handler(req, res) {
           role: 'user',
           content: [
             { type: 'image', source: { type: 'base64', media_type: mimeType, data: image } },
-            { type: 'text', text: `このレシートを解析してJSONのみ返してください。説明不要。
+            { type: 'text', text: `この画像がレシート・領収書でない場合は {"error":"レシートではありません"} のみ返してください。
+
+レシート・領収書の場合は以下のルールでJSONのみ返してください。説明不要。
 
 重要ルール：
 - nameはレシートに印字された文字を一字一句そのままコピー。要約・翻訳・省略・変換禁止
@@ -42,8 +44,9 @@ export default async function handler(req, res) {
 - accountは以下のルールで判定する：
   ・店名や品目に「駐車場」「パーキング」→「駐車代」
   ・「交通」「タクシー」「Uber」「uber」→「タクシー代」
-  ・「飲料」「ドリンク」「ジュース」「水」「お茶」「コーヒー」→「飲料代」
+  ・「飲料」「ドリンク」「ジュース」「カゴメ」「お茶」「緑茶」「麦茶」「ほうじ茶」「コーヒー」「コーラ」「サイダー」「水」→「飲料代」
   ・飲食店（レストラン・カフェ・定食・ラーメン・寿司・居酒屋等）→「飲食代」
+  ・店名に「コーナン」が含まれる場合、全品目→「消耗品」
   ・「ティッシュ」「トイレ」「洗剤」「作業着」「手袋」「軍手」→「消耗品」
   ・「自賠責」→「自賠責保険代」
   ・上記以外→「雑費」
@@ -65,6 +68,11 @@ export default async function handler(req, res) {
     const s = text.indexOf('{'), e = text.lastIndexOf('}');
     if (s === -1 || e === -1) return res.status(500).json({ error: 'JSONが見つかりません' });
     const parsed = JSON.parse(text.slice(s, e + 1));
+
+    // レシートでないと判定された場合
+    if (parsed.error) {
+      return res.status(400).json({ error: parsed.error });
+    }
 
     // 値引き行（amountが負）を直前の品目に統合する
     const validAccounts = ['駐車代','タクシー代','飲料代','飲食代','打ち合わせ','残業食事代','草刈り食事代','消耗品','自賠責保険代','不明','雑費','会費'];
