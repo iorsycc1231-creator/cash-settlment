@@ -362,7 +362,7 @@ function today(){return new Date().toISOString().slice(0,10);}
 function fmt(v){return Number(v||0).toLocaleString();}
 function recalcTot(ri){
   var t=0,i=0;
-  while(true){var el=document.getElementById('r'+ri+'am'+i);if(!el)break;t+=parseInt(el.value)||0;i++;}
+  while(true){var el=document.getElementById('r'+ri+'am'+i);if(!el)break;var v=parseInt(el.value);t+=isNaN(v)?0:v;i++;}
   var tot=document.getElementById('r'+ri+'tot');
   if(tot) tot.textContent='¥'+fmt(t);
 }
@@ -761,17 +761,19 @@ function showAllForms(person){
           var acEl=$e('r'+ri+'ac'+i);
           var nmEl=$e('r'+ri+'nm'+i);
           var amEl=$e('r'+ri+'am'+i);
-          return {name:nmEl?nmEl.value:it.name, amount:amEl?parseInt(amEl.value)||0:it.amount, tax_category:it.tax_category, account:acEl?acEl.value:'雑費'};
+          var amt=amEl?(isNaN(parseInt(amEl.value))?0:parseInt(amEl.value)):it.amount;
+          return {name:nmEl?nmEl.value:it.name, amount:amt, tax_category:it.tax_category, account:acEl?acEl.value:'雑費'};
         }),
         tax_8:d.tax_8,tax_10:d.tax_10,
-        total:(d.items||[]).reduce(function(s,it,i){var amEl=$e('r'+ri+'am'+i);return s+(amEl?parseInt(amEl.value)||0:it.amount);},0),
+        total:(d.items||[]).reduce(function(s,it,i){var amEl=$e('r'+ri+'am'+i);var v=amEl?(isNaN(parseInt(amEl.value))?0:parseInt(amEl.value)):it.amount;return s+v;},0),
         b64:r.b64,mime:r.mime
       };
     });
+    var fixedGrandTotal = receiptsSnap.reduce(function(s,r){return s+r.total;},0);
     showConfirm({
       person:person,
       receipts:receiptsSnap,
-      grandTotal:grandTotal,
+      grandTotal:fixedGrandTotal,
       method:method,
       status:method==='now'?'paid':'unsigned',
       sign:signData,
