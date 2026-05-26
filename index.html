@@ -360,12 +360,6 @@ function sv(){localStorage.setItem('apps',JSON.stringify(APPS));}
 function $e(id){return document.getElementById(id);}
 function today(){return new Date().toISOString().slice(0,10);}
 function fmt(v){return Number(v||0).toLocaleString();}
-function recalcTot(ri){
-  var t=0,i=0;
-  while(true){var el=document.getElementById('r'+ri+'am'+i);if(!el)break;var v=parseInt(el.value);t+=isNaN(v)?0:v;i++;}
-  var tot=document.getElementById('r'+ri+'tot');
-  if(tot) tot.textContent='¥'+fmt(t);
-}
 function fmtDateJP(s){
   if(!s) return '';
   // ISO形式（2026-05-23T...）を YYYY-MM-DD に正規化してから表示
@@ -554,28 +548,9 @@ function analyzeAll(){
     if(i>=RECEIPTS.length){ showAllForms(person); return; }
     var p=$e('prog'); if(p) p.textContent='解析中... ('+(i+1)+'/'+RECEIPTS.length+')';
     var r=RECEIPTS[i];
-    fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',
-        max_tokens:1000,
-        messages:[{role:'user',content:[
-          {type:'image',source:{type:'base64',media_type:r.mime,data:r.b64}},
-          {type:'text',text:'このレシート画像を解析してJSON形式のみで返してください。前置き・説明・マークダウン不要。\n\n必ず以下のルールを守ること：\n・店名・品目名のカタカナ・ひらがな・漢字は正確に読み取る\n・値引き・割引・クーポン・ポイント値引きなどマイナス項目は必ずamountを負の数値で返す（例：-100）\n・合計(total)は値引き後の実際の支払金額\n\n返すJSONの形式：\n{"store_name":"店名","date":"YYYY-MM-DD","invoice_number":"T番号または空文字","items":[{"name":"品目名","amount":金額(値引きはマイナス),"tax_category":"課税(10%)または課税(8%)または非課税"}],"tax_8":8%税額または0,"tax_10":10%税額または0,"total":合計金額}'}
-        ]}]
-      })
-    })
-    .then(function(res){return res.json();})
-    .then(function(res){
-      var text=res.content.map(function(c){return c.text||'';}).join('');
-      var clean=text.replace(/```json|```/g,'').trim();
-      var d=JSON.parse(clean);
-      if(!d.items) d.items=[];
-      d.items=d.items.map(function(it){return {name:it.name||'',amount:Number(it.amount)||0,tax_category:it.tax_category||'不明',account:it.account||''};});
-      if(!d.total && d.total!==0) d.total=d.items.reduce(function(s,it){return s+it.amount;},0);
-      r.data=d; next(i+1);
-    })
+    fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:r.b64,mimeType:r.mime})})
+    .then(function(res){if(!res.ok)return res.json().then(function(e){throw new Error(e.error||res.status);});return res.json();})
+    .then(function(d){r.data=d; next(i+1);})
     .catch(function(){
       r.data={store_name:'サンプル商店'+(i+1),date:today(),invoice_number:'',
         items:[{name:'商品'+(i+1),amount:500*(i+1),tax_category:'10%標準'}],
@@ -679,12 +654,9 @@ function showAllForms(person){
       row.className = 'irow';
       var opts = ACS.map(function(a){return '<option'+(a===ac?' selected':'')+'>'+a+'</option>';}).join('');
       row.innerHTML =
-        '<div style="display:flex;gap:6px;margin-bottom:6px">' +
-        '<input type="text" id="r'+ri+'nm'+i+'" value="'+(it.name||'').replace(/"/g,'&quot;')+'"' +
-        ' style="flex:1;padding:4px 7px;font-size:12px;font-weight:600;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit"/>' +
-        '<input type="number" id="r'+ri+'am'+i+'" value="'+it.amount+'"' +
-        ' style="width:88px;padding:4px 7px;font-size:12px;font-weight:700;color:'+(it.amount<0?'#dc2626':'#16a34a')+';border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;text-align:right"' +
-        ' oninput="recalcTot('+ri+')" />' +
+        '<div style="display:flex;justify-content:space-between;margin-bottom:6px">' +
+        '<span style="font-weight:600">'+it.name+'</span>' +
+        '<span style="font-weight:700;color:#16a34a">¥'+fmt(it.amount)+'</span>' +
         '</div>' +
         '<span class="ttag">'+(it.tax_category||'不明')+'</span>' +
         '<select id="r'+ri+'ac'+i+'" style="width:100%;padding:6px 8px;font-size:12px;border:1px solid #e5e7eb;border-radius:6px;margin-top:4px;font-family:inherit">'+opts+'</select>';
@@ -696,7 +668,7 @@ function showAllForms(person){
     tbox.innerHTML =
       '<div class="tr"><span style="color:#6b7280">消費税(8%)</span><span>'+(d.tax_8?'¥'+fmt(d.tax_8):'—')+'</span></div>' +
       '<div class="tr"><span style="color:#6b7280">消費税(10%)</span><span>'+(d.tax_10?'¥'+fmt(d.tax_10):'—')+'</span></div>' +
-      '<div class="tr"><span style="font-weight:700">小計</span><span style="font-weight:700;color:#dc2626" id="r'+ri+'tot">¥'+fmt(d.total)+'</span></div>';
+      '<div class="tr"><span style="font-weight:700">小計</span><span style="font-weight:700;color:#dc2626">¥'+fmt(d.total)+'</span></div>';
     card.appendChild(tbox);
     el.appendChild(card);
   });
@@ -777,22 +749,16 @@ function showAllForms(person){
         date:$e('r'+ri+'date').value,
         invoice:$e('r'+ri+'inv').value,
         items:(d.items||[]).map(function(it,i){
-          var acEl=$e('r'+ri+'ac'+i);
-          var nmEl=$e('r'+ri+'nm'+i);
-          var amEl=$e('r'+ri+'am'+i);
-          var amt=amEl?(isNaN(parseInt(amEl.value))?0:parseInt(amEl.value)):it.amount;
-          return {name:nmEl?nmEl.value:it.name, amount:amt, tax_category:it.tax_category, account:acEl?acEl.value:'雑費'};
+          var el=$e('r'+ri+'ac'+i);
+          return {name:it.name,amount:it.amount,tax_category:it.tax_category,account:el?el.value:'雑費'};
         }),
-        tax_8:d.tax_8,tax_10:d.tax_10,
-        total:(d.items||[]).reduce(function(s,it,i){var amEl=$e('r'+ri+'am'+i);var v=amEl?(isNaN(parseInt(amEl.value))?0:parseInt(amEl.value)):it.amount;return s+v;},0),
-        b64:r.b64,mime:r.mime
+        tax_8:d.tax_8,tax_10:d.tax_10,total:d.total,b64:r.b64,mime:r.mime
       };
     });
-    var fixedGrandTotal = receiptsSnap.reduce(function(s,r){return s+r.total;},0);
     showConfirm({
       person:person,
       receipts:receiptsSnap,
-      grandTotal:fixedGrandTotal,
+      grandTotal:grandTotal,
       method:method,
       status:method==='now'?'paid':'unsigned',
       sign:signData,
