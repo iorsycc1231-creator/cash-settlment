@@ -1443,6 +1443,20 @@ function openCloseModal(){
   var parts = targetMonth.split('-');
   $e('close-month-label').textContent = parts[0]+'年'+parseInt(parts[1],10)+'月';
   $e('close-month-label').setAttribute('data-month', targetMonth);
+
+  // 未精算・サイン済（未精算）の件数を表示
+  var unpaid = APPS.filter(function(a){ return a.status==='unsigned' || a.status==='' || a.status==='signed'; });
+  var unpaidWarn = $e('close-unpaid-warn');
+  if(unpaid.length > 0){
+    var names = unpaid.map(function(a){ return a.person+'（'+fmt(a.total)+'円）'; }).join('、');
+    unpaidWarn.style.display = 'block';
+    unpaidWarn.innerHTML = '⚠️ 未精算の申請が <b>'+unpaid.length+'件</b> あります。<br>'+
+      '<span style="font-size:11px;color:#92400e">'+names+'</span><br>'+
+      '<span style="font-size:11px;color:#b45309;margin-top:4px;display:block">これらは今月の現金精算には含まれません。締め後も申請は残ります。</span>';
+  } else {
+    unpaidWarn.style.display = 'none';
+  }
+
   $e('close-step1').style.display='block';
   $e('close-step2').style.display='none';
   $e('close-ov').style.display='block';
