@@ -1497,8 +1497,8 @@ function execClose(){
   var closeAt = new Date().toISOString();
   localStorage.setItem('last_close_at', closeAt);
 
-  // 申請・入金履歴をリセット
-  APPS = [];
+  // 精算済みのみリセット、未精算は繰り越す
+  APPS = APPS.filter(function(a){ return a.status==='unsigned' || a.status==='' || a.status==='signed'; });
   DEPOSITS = [];
   sv();
   localStorage.setItem('deposits','[]');
