@@ -116,6 +116,14 @@ hr{border:none;border-top:1px solid #e5e7eb;margin:12px 0}
   </div>
 </div>
 
+<!-- ローディング画面 -->
+<div id="loading-screen" style="position:fixed;inset:0;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999">
+  <div style="font-size:28px;font-weight:700;color:#1c1917;margin-bottom:8px">現金精算</div>
+  <div style="font-size:13px;color:#9ca3af;margin-bottom:32px">イソベ石油株式会社</div>
+  <div class="spin" style="width:36px;height:36px;border-width:3px"></div>
+  <div style="font-size:13px;color:#9ca3af;margin-top:16px">読み込み中...</div>
+</div>
+
 <div id="pg1" class="wrap"><div id="area"></div></div>
 <div id="pg2" class="wrap" style="display:none">
   <!-- 現金残高カード -->
@@ -413,6 +421,9 @@ var RECEIPTS = [];
 var CURRENT_PERSON = '';
 
 function showUpload(){
+  // ローディング画面を非表示
+  var ls = $e('loading-screen');
+  if(ls) ls.style.display = 'none';
   RECEIPTS = [];
   var el = $e('area');
   el.innerHTML = '';
@@ -1616,7 +1627,8 @@ function openReceiptTray(){
   win.document.write(html);
   win.document.close();
 }
-// 起動時にGASからlast_seqを同期してからアプリ開始
+// 起動時：先に画面を出してからバックグラウンドでlast_seqを同期
+showUpload();
 (function initSeqSync(){
   fetch(GAS_URL, {
     method:'POST',
@@ -1632,10 +1644,7 @@ function openReceiptTray(){
       localStorage.setItem('last_seq', String(maxSeq));
     }
   })
-  .catch(function(){})
-  .finally(function(){
-    showUpload();
-  });
+  .catch(function(){});
 })();
 </script>
 </body>
