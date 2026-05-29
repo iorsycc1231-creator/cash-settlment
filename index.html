@@ -1240,8 +1240,8 @@ function renderDepHistory(){
 
 function renderAdminList(){
   updateBalanceUI();
-  var t=APPS.reduce(function(s,a){return s+(a.total||0);},0);
-  var p=APPS.filter(function(a){return !isPaid(a);}).length;
+  var t=APPS.filter(function(a){return !a.deleted;}).reduce(function(s,a){return s+(a.total||0);},0);
+  var p=APPS.filter(function(a){return !a.deleted && !isPaid(a);}).length;
   $e('c1').textContent='¥'+fmt(t);
   $e('c2').textContent=p+'件';
 
@@ -1254,7 +1254,7 @@ function renderAdminList(){
       return {_type:'deposit', date:d.date, label:'入金', desc:d.memo, amount:d.amount, id:d.id};
     });
     // 精算完了の申請行
-    var appRows = APPS.filter(isPaid).map(function(a){
+    var appRows = APPS.filter(function(a){return isPaid(a) && !a.deleted;}).map(function(a){
       var rcptCount = a.receipts ? a.receipts.length : 1;
       return {_type:'app', date:a.settlement_date||a.date, label:'出金', desc:a.person+'　'+rcptCount+'件レシート清算', amount:a.total, id:a.id, app:a};
     });
@@ -1288,6 +1288,8 @@ function renderAdminList(){
   }
   var filtered = APPS.slice().reverse().filter(function(a){
     if(CURRENT_FILTER==='all') return true;
+    // 削除済みは「すべて」タブのみ表示
+    if(a.deleted) return false;
     if(CURRENT_FILTER==='paid') return isPaid(a);
     if(CURRENT_FILTER==='unsigned') return a.status!=='paid'&&a.status!=='精算済'&&a.status!=='signed';
     return true;
@@ -1298,6 +1300,16 @@ function renderAdminList(){
   }
   el.innerHTML=filtered.map(function(a){
     var rcptCount = a.receipts ? a.receipts.length : 1;
+    if(a.deleted){
+      // 削除済み：グレーアウト＋取り消し線＋バッジ
+      return '<div class="li" onclick="shD(\''+a.id+'\')" style="opacity:0.55;background:#f9fafb">'+
+        '<div style="display:flex;justify-content:space-between">'+
+        '<div><div style="font-size:12px;color:#9ca3af">'+(a.settlement_date?fmtDateJP(a.settlement_date):'—')+'</div>'+
+        '<div style="font-weight:600;margin-top:2px;text-decoration:line-through;color:#9ca3af">'+a.person+'　'+rcptCount+'件レシート清算</div></div>'+
+        '<div style="text-align:right"><div style="font-weight:700;color:#9ca3af;font-size:16px;text-decoration:line-through">¥'+fmt(a.total)+'</div>'+
+        '<span style="background:#e5e7eb;color:#6b7280;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:700">削除済み</span></div></div>'+
+        '<div style="font-size:11px;color:#9ca3af;margin-top:6px">'+a.id+'</div></div>';
+    }
     return '<div class="li" onclick="shD(\''+a.id+'\')">'+
       '<div style="display:flex;justify-content:space-between">'+
       '<div><div style="font-size:12px;color:#9ca3af">'+(a.settlement_date?fmtDateJP(a.settlement_date):'未精算')+'</div><div style="font-weight:600;margin-top:2px">'+a.person+'　'+rcptCount+'件レシート清算</div></div>'+
@@ -1360,16 +1372,23 @@ function shD(id){
       '<button class="btn" onclick="clsM();openPrintModal(\''+a.id+'\')" style="background:#1c1917;color:#fff;font-size:14px;font-weight:700;border:none;border-radius:8px;padding:14px;width:100%;cursor:pointer;font-family:inherit;margin-top:4px">🖨 精算書を印刷する</button>';
   }
 
-  // 管理画面（経理担当）のみ：編集・削除ボタン
+  // 管理画面（経理担当）のみ：編集・削除・復元ボタン
   var adminSection='';
   if(ADMIN_MODE){
-    adminSection=
-      '<hr/>'+
-      '<div style="display:flex;gap:8px;margin-top:4px">'+
-      '<button class="btn" onclick="editApp(\''+a.id+'\')" style="flex:1;background:#2563eb;color:#fff;font-size:13px;font-weight:700;border:none;border-radius:8px;padding:12px;cursor:pointer;font-family:inherit">✏️ 修正する</button>'+
-      '<button class="btn" onclick="deleteApp(\''+a.id+'\')" style="flex:1;background:#fff;color:#dc2626;font-size:13px;font-weight:700;border:2px solid #dc2626;border-radius:8px;padding:12px;cursor:pointer;font-family:inherit">🗑 削除する</button>'+
-      '</div>'+
-      '<p style="font-size:11px;color:#9ca3af;text-align:center;margin-top:6px">※締め済みの申請は修正・削除できません</p>';
+    if(a.deleted){
+      adminSection=
+        '<hr/>'+
+        '<div style="background:#f3f4f6;color:#6b7280;text-align:center;padding:8px;border-radius:8px;font-size:13px;font-weight:700;margin-bottom:8px">🗑 この申請は削除済みです</div>'+
+        '<button class="btn" onclick="restoreApp(\''+a.id+'\')" style="width:100%;background:#16a34a;color:#fff;font-size:14px;font-weight:700;border:none;border-radius:8px;padding:13px;cursor:pointer;font-family:inherit">↩️ 復元する</button>';
+    } else {
+      adminSection=
+        '<hr/>'+
+        '<div style="display:flex;gap:8px;margin-top:4px">'+
+        '<button class="btn" onclick="editApp(\''+a.id+'\')" style="flex:1;background:#2563eb;color:#fff;font-size:13px;font-weight:700;border:none;border-radius:8px;padding:12px;cursor:pointer;font-family:inherit">✏️ 修正する</button>'+
+        '<button class="btn" onclick="deleteApp(\''+a.id+'\')" style="flex:1;background:#fff;color:#dc2626;font-size:13px;font-weight:700;border:2px solid #dc2626;border-radius:8px;padding:12px;cursor:pointer;font-family:inherit">🗑 削除する</button>'+
+        '</div>'+
+        '<p style="font-size:11px;color:#9ca3af;text-align:center;margin-top:6px">※締め済みの申請は修正・削除できません</p>';
+    }
   }
 
   $e('mb').innerHTML=
@@ -1561,17 +1580,35 @@ function saveEdit(id, rcptCount){
 
 function deleteApp(id){
   var a=APPS.find(function(x){return x.id===id;});if(!a)return;
-  if(!confirm('この申請を削除しますか？\n'+a.id+'　'+a.person+'　¥'+fmt(a.total)+'\n\n※履歴は残りますが、一覧からは消えます')) return;
+  if(!confirm('この申請を削除しますか？\n'+a.id+'　'+a.person+'　¥'+fmt(a.total)+'\n\n※一覧には「削除済み」として残り、あとで復元できます')) return;
 
   apiSheet({action:'delete', id:id}, true)
   .then(function(r){return r.json();})
   .then(function(res){
     if(res && res.ok===false){ alert(res.error||'削除できませんでした'); clsM(); shD(id); }
     else {
-      // ローカルからも除外
-      APPS = APPS.filter(function(x){return x.id!==id;});
+      // ローカルは削除フラグを立てて残す（グレーアウト表示）
+      a.deleted=true;
       sv();
       alert('削除しました');
+      clsM(); renderAdminList();
+    }
+  })
+  .catch(function(){ alert('通信エラーが発生しました'); });
+}
+
+function restoreApp(id){
+  var a=APPS.find(function(x){return x.id===id;});if(!a)return;
+  if(!confirm('この申請を復元しますか？\n'+a.id+'　'+a.person)) return;
+
+  apiSheet({action:'restore', id:id}, true)
+  .then(function(r){return r.json();})
+  .then(function(res){
+    if(res && res.ok===false){ alert(res.error||'復元できませんでした'); clsM(); shD(id); }
+    else {
+      a.deleted=false;
+      sv();
+      alert('復元しました');
       clsM(); renderAdminList();
     }
   })
