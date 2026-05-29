@@ -1360,6 +1360,18 @@ function shD(id){
       '<button class="btn" onclick="clsM();openPrintModal(\''+a.id+'\')" style="background:#1c1917;color:#fff;font-size:14px;font-weight:700;border:none;border-radius:8px;padding:14px;width:100%;cursor:pointer;font-family:inherit;margin-top:4px">🖨 精算書を印刷する</button>';
   }
 
+  // 管理画面（経理担当）のみ：編集・削除ボタン
+  var adminSection='';
+  if(ADMIN_MODE){
+    adminSection=
+      '<hr/>'+
+      '<div style="display:flex;gap:8px;margin-top:4px">'+
+      '<button class="btn" onclick="editApp(\''+a.id+'\')" style="flex:1;background:#2563eb;color:#fff;font-size:13px;font-weight:700;border:none;border-radius:8px;padding:12px;cursor:pointer;font-family:inherit">✏️ 修正する</button>'+
+      '<button class="btn" onclick="deleteApp(\''+a.id+'\')" style="flex:1;background:#fff;color:#dc2626;font-size:13px;font-weight:700;border:2px solid #dc2626;border-radius:8px;padding:12px;cursor:pointer;font-family:inherit">🗑 削除する</button>'+
+      '</div>'+
+      '<p style="font-size:11px;color:#9ca3af;text-align:center;margin-top:6px">※締め済みの申請は修正・削除できません</p>';
+  }
+
   $e('mb').innerHTML=
     '<div class="banner" style="margin-bottom:16px">'+
     '<div style="font-size:11px;color:#9ca3af;margin-bottom:2px">合計金額</div>'+
@@ -1376,7 +1388,8 @@ function shD(id){
     (a.sign&&a.sign.startsWith('data:')
       ?'<hr/><div style="font-size:12px;font-weight:600;color:#6b7280;margin-bottom:8px">電子サイン（申請者）</div><img src="'+a.sign+'" style="border:1px solid #e5e7eb;border-radius:8px;width:100%;max-height:100px;object-fit:contain"/>'
       :'')+
-    signSection;
+    signSection+
+    adminSection;
 
   $e('ov').style.display='block';
 
@@ -1421,6 +1434,124 @@ function shD(id){
 }
 
 function clsM(){$e('ov').style.display='none';}
+
+// ===== 経理担当による申請の編集・削除 =====
+// （締め済みかどうかの最終判定はGAS側で行う。締め済みなら保存時に拒否される）
+
+function editApp(id){
+  var a=APPS.find(function(x){return x.id===id;});if(!a)return;
+  var taxOpts=['10%標準','8%軽減','非課税'];
+
+  // レシート単位で編集行を作る（receiptsが無ければitemsを1レシート扱い）
+  var receipts = a.receipts && a.receipts.length>0
+    ? a.receipts
+    : [{store:a.store,date:a.date,items:a.items||[]}];
+
+  var body='<div style="font-size:16px;font-weight:700;margin-bottom:4px">申請の修正</div>'+
+    '<div style="font-size:11px;color:#9ca3af;margin-bottom:12px">'+a.id+'　'+a.person+'</div>';
+
+  receipts.forEach(function(r,ri){
+    body+='<div style="background:#f9fafb;border-radius:8px;padding:10px;margin-bottom:10px">'+
+      '<div style="font-size:12px;font-weight:700;color:#6b7280;margin-bottom:8px">レシート'+(ri+1)+'　'+(r.store||'')+'　'+(r.date||'')+'</div>';
+    (r.items||[]).forEach(function(it,ii){
+      var acOpts=ACS.map(function(ac){return '<option'+(ac===it.account?' selected':'')+'>'+ac+'</option>';}).join('');
+      var txOpts=taxOpts.map(function(tx){return '<option'+(tx===it.tax_category?' selected':'')+'>'+tx+'</option>';}).join('');
+      body+='<div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e5e7eb">'+
+        '<input id="e_'+ri+'_'+ii+'_name" value="'+(it.name||'').replace(/"/g,'&quot;')+'" placeholder="品目名" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-family:inherit;font-size:13px;margin-bottom:6px"/>'+
+        '<div style="display:flex;gap:6px">'+
+        '<select id="e_'+ri+'_'+ii+'_ac" style="flex:1;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-family:inherit;font-size:12px">'+acOpts+'</select>'+
+        '<select id="e_'+ri+'_'+ii+'_tx" style="flex:1;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-family:inherit;font-size:12px">'+txOpts+'</select>'+
+        '</div>'+
+        '<input id="e_'+ri+'_'+ii+'_amt" type="number" value="'+(Number(it.amount)||0)+'" placeholder="金額" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-family:inherit;font-size:13px;margin-top:6px"/>'+
+        '</div>';
+    });
+    body+='</div>';
+  });
+
+  body+='<div style="display:flex;gap:8px;margin-bottom:12px">'+
+    '<div style="flex:1"><label style="font-size:11px;color:#6b7280">消費税8%</label>'+
+    '<input id="e_tax8" type="number" value="'+(Number(a.tax_8)||0)+'" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-family:inherit;font-size:13px"/></div>'+
+    '<div style="flex:1"><label style="font-size:11px;color:#6b7280">消費税10%</label>'+
+    '<input id="e_tax10" type="number" value="'+(Number(a.tax_10)||0)+'" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-family:inherit;font-size:13px"/></div>'+
+    '</div>'+
+    '<div style="display:flex;gap:8px">'+
+    '<button class="btn" onclick="clsM();shD(\''+a.id+'\')" style="flex:1;background:#f3f4f6;color:#374151;font-weight:700;border:none;border-radius:8px;padding:12px;cursor:pointer;font-family:inherit;font-size:13px">キャンセル</button>'+
+    '<button class="btn" onclick="saveEdit(\''+a.id+'\','+receipts.length+')" style="flex:1;background:#2563eb;color:#fff;font-weight:700;border:none;border-radius:8px;padding:12px;cursor:pointer;font-family:inherit;font-size:13px">保存する</button>'+
+    '</div>';
+
+  $e('mb').innerHTML=body;
+  $e('ov').style.display='block';
+}
+
+function saveEdit(id, rcptCount){
+  var a=APPS.find(function(x){return x.id===id;});if(!a)return;
+
+  var receipts = a.receipts && a.receipts.length>0
+    ? JSON.parse(JSON.stringify(a.receipts))
+    : [{store:a.store,date:a.date,items:JSON.parse(JSON.stringify(a.items||[]))}];
+
+  var grandTotal=0;
+  for(var ri=0; ri<receipts.length; ri++){
+    var rTotal=0;
+    var items=receipts[ri].items||[];
+    for(var ii=0; ii<items.length; ii++){
+      var nm=$e('e_'+ri+'_'+ii+'_name'); var ac=$e('e_'+ri+'_'+ii+'_ac');
+      var tx=$e('e_'+ri+'_'+ii+'_tx'); var amt=$e('e_'+ri+'_'+ii+'_amt');
+      if(nm) items[ii].name=nm.value;
+      if(ac) items[ii].account=ac.value;
+      if(tx) items[ii].tax_category=tx.value;
+      if(amt) items[ii].amount=Number(amt.value)||0;
+      rTotal+=Number(items[ii].amount)||0;
+    }
+    receipts[ri].items=items;
+    receipts[ri].total=rTotal;
+    grandTotal+=rTotal;
+  }
+
+  var tax8=Number($e('e_tax8').value)||0;
+  var tax10=Number($e('e_tax10').value)||0;
+
+  // ローカル反映
+  a.receipts = a.receipts && a.receipts.length>0 ? receipts : null;
+  if(!a.receipts){ a.items=receipts[0].items; }
+  a.total=grandTotal;
+  a.tax_8=tax8;
+  a.tax_10=tax10;
+  sv();
+
+  // GASに送信（締め済みならGAS側が拒否しエラーを返す）
+  apiSheet({
+    action:'edit', id:id, total:grandTotal, tax_8:tax8, tax_10:tax10,
+    receipts: a.receipts ? a.receipts.map(function(r){return {store:r.store,date:r.date,items:r.items};}) : null,
+    items: a.receipts ? null : receipts[0].items
+  }, true)
+  .then(function(r){return r.json();})
+  .then(function(res){
+    if(res && res.ok===false){ alert(res.error||'修正できませんでした'); }
+    else { alert('修正を保存しました'); }
+    clsM(); shD(id); renderAdminList();
+  })
+  .catch(function(){ alert('通信エラーが発生しました'); clsM(); shD(id); renderAdminList(); });
+}
+
+function deleteApp(id){
+  var a=APPS.find(function(x){return x.id===id;});if(!a)return;
+  if(!confirm('この申請を削除しますか？\n'+a.id+'　'+a.person+'　¥'+fmt(a.total)+'\n\n※履歴は残りますが、一覧からは消えます')) return;
+
+  apiSheet({action:'delete', id:id}, true)
+  .then(function(r){return r.json();})
+  .then(function(res){
+    if(res && res.ok===false){ alert(res.error||'削除できませんでした'); clsM(); shD(id); }
+    else {
+      // ローカルからも除外
+      APPS = APPS.filter(function(x){return x.id!==id;});
+      sv();
+      alert('削除しました');
+      clsM(); renderAdminList();
+    }
+  })
+  .catch(function(){ alert('通信エラーが発生しました'); });
+}
 
 function openCloseModal(){
   var b = calcBalance();
