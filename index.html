@@ -1441,28 +1441,40 @@ function clsM(){$e('ov').style.display='none';}
 function editApp(id){
   var a=APPS.find(function(x){return x.id===id;});if(!a)return;
   var taxOpts=['10%標準','8%軽減','非課税'];
+  // iOS自動ズーム防止のため入力欄は font-size:16px 以上にする
+  var inS='width:100%;padding:9px;border:1px solid #d1d5db;border-radius:6px;font-family:inherit;font-size:16px';
+  var slS='flex:1;padding:9px;border:1px solid #d1d5db;border-radius:6px;font-family:inherit;font-size:16px';
 
   // レシート単位で編集行を作る（receiptsが無ければitemsを1レシート扱い）
   var receipts = a.receipts && a.receipts.length>0
     ? a.receipts
-    : [{store:a.store,date:a.date,items:a.items||[]}];
+    : [{store:a.store,date:a.date,invoice:a.invoice,items:a.items||[]}];
 
   var body='<div style="font-size:16px;font-weight:700;margin-bottom:4px">申請の修正</div>'+
-    '<div style="font-size:11px;color:#9ca3af;margin-bottom:12px">'+a.id+'　'+a.person+'</div>';
+    '<div style="font-size:12px;color:#9ca3af;margin-bottom:12px">'+a.id+'　'+a.person+'</div>';
 
   receipts.forEach(function(r,ri){
     body+='<div style="background:#f9fafb;border-radius:8px;padding:10px;margin-bottom:10px">'+
-      '<div style="font-size:12px;font-weight:700;color:#6b7280;margin-bottom:8px">レシート'+(ri+1)+'　'+(r.store||'')+'　'+(r.date||'')+'</div>';
+      '<div style="font-size:13px;font-weight:700;color:#6b7280;margin-bottom:8px">レシート'+(ri+1)+'</div>'+
+      '<label style="font-size:11px;color:#6b7280">店名</label>'+
+      '<input id="e_'+ri+'_store" value="'+(r.store||'').replace(/"/g,'&quot;')+'" placeholder="店名" style="'+inS+';margin-bottom:8px"/>'+
+      '<div style="display:flex;gap:6px;margin-bottom:8px">'+
+      '<div style="flex:1"><label style="font-size:11px;color:#6b7280">取引日</label>'+
+      '<input id="e_'+ri+'_date" value="'+(r.date||'').replace(/"/g,'&quot;')+'" placeholder="YYYY-MM-DD" style="'+inS+'"/></div>'+
+      '<div style="flex:1"><label style="font-size:11px;color:#6b7280">インボイス番号</label>'+
+      '<input id="e_'+ri+'_inv" value="'+(r.invoice||'').replace(/"/g,'&quot;')+'" placeholder="T+13桁" style="'+inS+'"/></div>'+
+      '</div>'+
+      '<div style="font-size:11px;color:#9ca3af;margin:6px 0 4px">明細</div>';
     (r.items||[]).forEach(function(it,ii){
       var acOpts=ACS.map(function(ac){return '<option'+(ac===it.account?' selected':'')+'>'+ac+'</option>';}).join('');
       var txOpts=taxOpts.map(function(tx){return '<option'+(tx===it.tax_category?' selected':'')+'>'+tx+'</option>';}).join('');
       body+='<div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e5e7eb">'+
-        '<input id="e_'+ri+'_'+ii+'_name" value="'+(it.name||'').replace(/"/g,'&quot;')+'" placeholder="品目名" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-family:inherit;font-size:13px;margin-bottom:6px"/>'+
+        '<input id="e_'+ri+'_'+ii+'_name" value="'+(it.name||'').replace(/"/g,'&quot;')+'" placeholder="品目名" style="'+inS+';margin-bottom:6px"/>'+
         '<div style="display:flex;gap:6px">'+
-        '<select id="e_'+ri+'_'+ii+'_ac" style="flex:1;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-family:inherit;font-size:12px">'+acOpts+'</select>'+
-        '<select id="e_'+ri+'_'+ii+'_tx" style="flex:1;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-family:inherit;font-size:12px">'+txOpts+'</select>'+
+        '<select id="e_'+ri+'_'+ii+'_ac" style="'+slS+'">'+acOpts+'</select>'+
+        '<select id="e_'+ri+'_'+ii+'_tx" style="'+slS+'">'+txOpts+'</select>'+
         '</div>'+
-        '<input id="e_'+ri+'_'+ii+'_amt" type="number" value="'+(Number(it.amount)||0)+'" placeholder="金額" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-family:inherit;font-size:13px;margin-top:6px"/>'+
+        '<input id="e_'+ri+'_'+ii+'_amt" type="number" inputmode="numeric" value="'+(Number(it.amount)||0)+'" placeholder="金額" style="'+inS+';margin-top:6px"/>'+
         '</div>';
     });
     body+='</div>';
@@ -1470,13 +1482,13 @@ function editApp(id){
 
   body+='<div style="display:flex;gap:8px;margin-bottom:12px">'+
     '<div style="flex:1"><label style="font-size:11px;color:#6b7280">消費税8%</label>'+
-    '<input id="e_tax8" type="number" value="'+(Number(a.tax_8)||0)+'" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-family:inherit;font-size:13px"/></div>'+
+    '<input id="e_tax8" type="number" inputmode="numeric" value="'+(Number(a.tax_8)||0)+'" style="'+inS+'"/></div>'+
     '<div style="flex:1"><label style="font-size:11px;color:#6b7280">消費税10%</label>'+
-    '<input id="e_tax10" type="number" value="'+(Number(a.tax_10)||0)+'" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-family:inherit;font-size:13px"/></div>'+
+    '<input id="e_tax10" type="number" inputmode="numeric" value="'+(Number(a.tax_10)||0)+'" style="'+inS+'"/></div>'+
     '</div>'+
     '<div style="display:flex;gap:8px">'+
-    '<button class="btn" onclick="clsM();shD(\''+a.id+'\')" style="flex:1;background:#f3f4f6;color:#374151;font-weight:700;border:none;border-radius:8px;padding:12px;cursor:pointer;font-family:inherit;font-size:13px">キャンセル</button>'+
-    '<button class="btn" onclick="saveEdit(\''+a.id+'\','+receipts.length+')" style="flex:1;background:#2563eb;color:#fff;font-weight:700;border:none;border-radius:8px;padding:12px;cursor:pointer;font-family:inherit;font-size:13px">保存する</button>'+
+    '<button class="btn" onclick="clsM();shD(\''+a.id+'\')" style="flex:1;background:#f3f4f6;color:#374151;font-weight:700;border:none;border-radius:8px;padding:13px;cursor:pointer;font-family:inherit;font-size:15px">キャンセル</button>'+
+    '<button class="btn" onclick="saveEdit(\''+a.id+'\','+receipts.length+')" style="flex:1;background:#2563eb;color:#fff;font-weight:700;border:none;border-radius:8px;padding:13px;cursor:pointer;font-family:inherit;font-size:15px">保存する</button>'+
     '</div>';
 
   $e('mb').innerHTML=body;
@@ -1488,10 +1500,16 @@ function saveEdit(id, rcptCount){
 
   var receipts = a.receipts && a.receipts.length>0
     ? JSON.parse(JSON.stringify(a.receipts))
-    : [{store:a.store,date:a.date,items:JSON.parse(JSON.stringify(a.items||[]))}];
+    : [{store:a.store,date:a.date,invoice:a.invoice,items:JSON.parse(JSON.stringify(a.items||[]))}];
 
   var grandTotal=0;
   for(var ri=0; ri<receipts.length; ri++){
+    // 店名・取引日・インボイス番号
+    var st=$e('e_'+ri+'_store'); var dt=$e('e_'+ri+'_date'); var iv=$e('e_'+ri+'_inv');
+    if(st) receipts[ri].store=st.value;
+    if(dt) receipts[ri].date=dt.value;
+    if(iv) receipts[ri].invoice=iv.value;
+
     var rTotal=0;
     var items=receipts[ri].items||[];
     for(var ii=0; ii<items.length; ii++){
@@ -1512,8 +1530,14 @@ function saveEdit(id, rcptCount){
   var tax10=Number($e('e_tax10').value)||0;
 
   // ローカル反映
-  a.receipts = a.receipts && a.receipts.length>0 ? receipts : null;
-  if(!a.receipts){ a.items=receipts[0].items; }
+  if(a.receipts && a.receipts.length>0){
+    a.receipts=receipts;
+  } else {
+    a.items=receipts[0].items;
+    a.store=receipts[0].store;
+    a.date=receipts[0].date;
+    a.invoice=receipts[0].invoice;
+  }
   a.total=grandTotal;
   a.tax_8=tax8;
   a.tax_10=tax10;
@@ -1522,8 +1546,9 @@ function saveEdit(id, rcptCount){
   // GASに送信（締め済みならGAS側が拒否しエラーを返す）
   apiSheet({
     action:'edit', id:id, total:grandTotal, tax_8:tax8, tax_10:tax10,
-    receipts: a.receipts ? a.receipts.map(function(r){return {store:r.store,date:r.date,items:r.items};}) : null,
-    items: a.receipts ? null : receipts[0].items
+    store: receipts[0].store, invoice: receipts[0].invoice,
+    receipts: (a.receipts && a.receipts.length>0) ? a.receipts.map(function(r){return {store:r.store,date:r.date,invoice:r.invoice,items:r.items};}) : null,
+    items: (a.receipts && a.receipts.length>0) ? null : receipts[0].items
   }, true)
   .then(function(r){return r.json();})
   .then(function(res){
