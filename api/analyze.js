@@ -1,9 +1,20 @@
+import { verifyToken } from './_auth.js';
+
+const ALLOWED_ORIGIN = process.env.APP_ORIGIN;
+
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  if (req.headers.origin === ALLOWED_ORIGIN) {
+    res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
+  }
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-access-token');
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  // 認証チェック（トークンが無ければ拒否＝API乱用・コスト爆発を防ぐ）
+  if (!verifyToken(req.headers['x-access-token'], 'user')) {
+    return res.status(401).json({ error: '認証が必要です' });
+  }
 
   try {
     const { image, mimeType } = req.body;
