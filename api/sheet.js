@@ -1,8 +1,8 @@
 import { verifyToken } from './_auth.js';
 
-// 管理者だけに許す操作（全データの読み取り・月次締め）
+// 管理者だけに許す操作（全データの読み取り・編集・削除・月次締め）
 // load/loadDeposits は他人の経費が含まれるため申請者には渡さない
-const ADMIN_ACTIONS = ['load', 'loadDeposits', 'monthClose'];
+const ADMIN_ACTIONS = ['load', 'loadDeposits', 'monthClose', 'edit', 'delete'];
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
