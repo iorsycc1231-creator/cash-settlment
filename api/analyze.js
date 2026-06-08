@@ -69,7 +69,13 @@ export default async function handler(req, res) {
   ・「自賠責」→「自賠責保険代」
   ・上記以外→「雑費」
 
-{"store_name":"店名","invoice_number":"T+13桁またはnull","invoice_status":"適格または要確認","date":"YYYY-MM-DD","items":[{"name":"印字文字そのまま","amount":数値(値引きは必ず負の数),"tax_category":"10%標準または8%軽減または非課税または不課税","account":"駐車代/タクシー代/飲料代/飲食代/消耗品/自賠責保険代/雑費のいずれか"}],"tax_8":数値またはnull,"tax_10":数値またはnull,"total":数値}` }
+【複数レシートの対応】
+- 1枚の画像に複数のレシート・領収書が写っている場合は、それぞれを別々のレシートとして認識し、receipts配列に複数の要素として返す。
+- 1枚だけの場合はreceipts配列に1要素だけ返す。
+- 各レシートは独立して上記ルールで読み取る。
+
+次のJSON形式のみで返す（説明不要）。必ずreceipts配列の形にする：
+{"receipts":[{"store_name":"店名","invoice_number":"T+13桁またはnull","invoice_status":"適格または要確認","date":"YYYY-MM-DD","items":[{"name":"印字文字そのまま","amount":数値(値引きは必ず負の数),"tax_category":"10%標準または8%軽減または非課税または不課税","account":"駐車代/タクシー代/飲料代/飲食代/消耗品/自賠責保険代/雑費のいずれか"}],"tax_8":数値またはnull,"tax_10":数値またはnull,"total":数値}]}` }
           ]
         }]
       })
@@ -85,43 +91,54 @@ export default async function handler(req, res) {
     let text = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
     const s = text.indexOf('{'), e = text.lastIndexOf('}');
     if (s === -1 || e === -1) return res.status(500).json({ error: 'JSONが見つかりません' });
-    const parsed = JSON.parse(text.slice(s, e + 1));
+    const parsedRaw = JSON.parse(text.slice(s, e + 1));
 
     // レシートでないと判定された場合
-    if (parsed.error) {
-      return res.status(400).json({ error: parsed.error });
+    if (parsedRaw.error) {
+      return res.status(400).json({ error: parsedRaw.error });
     }
 
-    // 値引き行（amountが負）を直前の品目に統合する
+    // receipts配列に正規化（旧形式：単一レシートが返ってきた場合も配列に包む）
+    let receipts = [];
+    if (Array.isArray(parsedRaw.receipts)) {
+      receipts = parsedRaw.receipts;
+    } else if (parsedRaw.items || parsedRaw.store_name) {
+      receipts = [parsedRaw];
+    } else {
+      return res.status(500).json({ error: 'レシートを認識できませんでした' });
+    }
+
     const validAccounts = ['駐車代','タクシー代','飲料代','飲食代','打ち合わせ','残業食事代','草刈り食事代','消耗品','自賠責保険代','不明','雑費','会費'];
-    if (Array.isArray(parsed.items)) {
-      // フォールバック：名前に割引キーワードがあるのにamountが正の場合は強制的にマイナスにする
-      const discountPattern = /割引|値引|クーポン|ポイント|code\d+|discount/i;
-      parsed.items = parsed.items.map(item => {
-        const amount = Number(item.amount) || 0;
-        if (discountPattern.test(item.name) && amount > 0) {
-          return { ...item, amount: -amount };
-        }
-        return { ...item, amount };
-      });
+    const discountPattern = /割引|値引|クーポン|ポイント|code\d+|discount/i;
 
-      const merged = [];
-      for (const item of parsed.items) {
-        const amount = Number(item.amount) || 0;
-        if (amount < 0 && merged.length > 0) {
-          // 直前の品目のamountからマイナス分を引く
-          merged[merged.length - 1].amount += amount;
-        } else {
-          merged.push({ ...item, amount });
+    // 各レシートごとに値引き統合・勘定科目の検証を行う
+    receipts = receipts.map(rcpt => {
+      if (Array.isArray(rcpt.items)) {
+        let items = rcpt.items.map(item => {
+          const amount = Number(item.amount) || 0;
+          if (discountPattern.test(item.name) && amount > 0) return { ...item, amount: -amount };
+          return { ...item, amount };
+        });
+        const merged = [];
+        for (const item of items) {
+          const amount = Number(item.amount) || 0;
+          if (amount < 0 && merged.length > 0) {
+            merged[merged.length - 1].amount += amount;
+          } else {
+            merged.push({ ...item, amount });
+          }
         }
+        rcpt.items = merged.map(item => ({
+          ...item,
+          account: validAccounts.includes(item.account) ? item.account : '雑費'
+        }));
       }
-      parsed.items = merged.map(item => ({
-        ...item,
-        account: validAccounts.includes(item.account) ? item.account : '雑費'
-      }));
-    }
+      return rcpt;
+    });
 
-    return res.status(200).json(parsed);
+    // 後方互換：先頭レシートのフィールドもトップレベルに展開して返す
+    const first = receipts[0] || {};
+    return res.status(200).json({ ...first, receipts });
 
   } catch (e) {
     return res.status(500).json({ error: e.message });
