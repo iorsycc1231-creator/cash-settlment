@@ -1,5 +1,8 @@
 import { verifyToken } from './_auth.js';
 
+// 写真(base64)を受けられるようボディ上限を引き上げる
+export const config = { api: { bodyParser: { sizeLimit: '10mb' } } };
+
 // 管理者だけに許す操作（全データの読み取り・編集・削除・月次締め）
 // load/loadDeposits は他人の経費が含まれるため申請者には渡さない
 const ADMIN_ACTIONS = ['load', 'loadDeposits', 'monthClose', 'edit', 'delete', 'restore'];
