@@ -634,15 +634,18 @@ function recalcTotB(ri){
     i++;
   }
   var totEl=document.getElementById('r'+ri+'tot');
-  if(totEl) totEl.textContent='¥'+fmt(itemsSum);
+  var tax=totEl?(parseInt(totEl.getAttribute('data-tax'),10)||0):0;
+  // 表示は「品目合計＋税額」（税込）。明細を直したら税込合計も更新
+  if(totEl) totEl.textContent='¥'+fmt(itemsSum+tax);
   checkWarnB(ri);
 }
-// 警告チェック（合計と明細のズレのみ）
+// 警告チェック（税込合計とレシート記載合計のズレのみ。外税レシートの誤検知を防ぐ）
 function checkWarnB(ri){
   var warnEl=document.getElementById('r'+ri+'warn');
   if(!warnEl) return;
   var totEl=document.getElementById('r'+ri+'tot');
   var stated=totEl?(parseInt(totEl.getAttribute('data-original'),10)||0):0;
+  var tax=totEl?(parseInt(totEl.getAttribute('data-tax'),10)||0):0;
   // 現在の明細合計を集計
   var itemsSum=0, i=0, hasItems=false;
   while(true){
@@ -653,13 +656,16 @@ function checkWarnB(ri){
     itemsSum+=isNaN(v)?0:v;
     i++;
   }
-  // 編集欄が無い（detail未生成）場合は、表示中の合計テキストから読む
+  // 編集欄が無い場合は、表示中の税込合計から税額を引いて品目合計を推定
   if(!hasItems && totEl){
-    itemsSum = parseInt(String(totEl.textContent).replace(/[^0-9-]/g,''),10)||0;
+    var shown = parseInt(String(totEl.textContent).replace(/[^0-9-]/g,''),10)||0;
+    itemsSum = shown - tax;
   }
-  if(stated && Math.abs(itemsSum - stated) > 1){
+  // 税込合計（品目合計＋税額）と、レシート記載合計を比較
+  var taxIncluded = itemsSum + tax;
+  if(stated && Math.abs(taxIncluded - stated) > 1){
     warnEl.style.display='block';
-    warnEl.innerHTML='⚠️ 明細の合計（¥'+fmt(itemsSum)+'）が、レシート記載の合計（¥'+fmt(stated)+'）と一致しません。金額を確認してください。';
+    warnEl.innerHTML='⚠️ 明細の合計（¥'+fmt(taxIncluded)+'）が、レシート記載の合計（¥'+fmt(stated)+'）と一致しません。金額を確認してください。';
   } else {
     warnEl.style.display='none';
   }
@@ -774,7 +780,11 @@ function showAllForms(person){
 
     var items = d.items || [];
     var sumItems = items.reduce(function(s,it){return s+(Number(it.amount)||0);},0);
-    var statedTotal = (d.total != null) ? Number(d.total) : sumItems;
+    // 消費税（外税）。tax_8/tax_10があれば合算
+    var taxAmt = (Number(d.tax_8)||0) + (Number(d.tax_10)||0);
+    // 表示する合計：品目合計＋外税。レシート記載合計があればそれを優先
+    var statedTotal = (d.total != null) ? Number(d.total) : (sumItems + taxAmt);
+    var displayTotal = statedTotal;
     var guessUse = (items[0]) ? gac(items[0].name, d.store_name) : '';
     r._use = r._use || guessUse;
 
@@ -789,6 +799,11 @@ function showAllForms(person){
         '<span style="flex:1">'+(it.name||'')+t8+'</span>'+
         '<span style="color:'+amtColor+';margin-left:8px">\u00a5'+fmt(it.amount)+'</span></div>';
     }).join('');
+    // 消費税の行を品目一覧に足す（外税のとき、合計と内訳が一致して見える）
+    if(taxAmt>0){
+      itemsList += '<div style="display:flex;justify-content:space-between;font-size:12px;color:#9ca3af;padding:3px 0;border-top:1px dashed #e5e7eb;margin-top:3px">'+
+        '<span style="flex:1">消費税</span><span style="margin-left:8px">\u00a5'+fmt(taxAmt)+'</span></div>';
+    }
 
     // \u30a4\u30f3\u30dc\u30a4\u30b9\u30d5\u30e9\u30b0
     var invFlag = d.invoice_number ? '' :
@@ -816,7 +831,7 @@ function showAllForms(person){
           '<div><span style="color:#9ca3af;display:inline-block;width:56px">\u53d6\u5f15\u65e5</span>'+(d.date||today())+'</div>'+
           '<div><span style="color:#9ca3af;display:inline-block;width:56px">\u652f\u6255\u5148</span>'+(d.store_name||'(\u4e0d\u660e)')+'</div>'+
           '</div></div>'+
-        '<div style="text-align:right"><div id="r'+ri+'tot" data-original="'+statedTotal+'" style="font-size:26px;font-weight:700;color:#dc2626;line-height:1.1">\u00a5'+fmt(sumItems)+'</div><div style="font-size:11px;color:#9ca3af">\u5408\u8a08\uff08\u7a0e\u8fbc\uff09</div></div>'+
+        '<div style="text-align:right"><div id="r'+ri+'tot" data-original="'+statedTotal+'" data-tax="'+taxAmt+'" style="font-size:26px;font-weight:700;color:#dc2626;line-height:1.1">\u00a5'+fmt(displayTotal)+'</div><div style="font-size:11px;color:#9ca3af">\u5408\u8a08\uff08\u7a0e\u8fbc\uff09</div></div>'+
       '</div>'+
       '<div id="r'+ri+'warn" style="display:none;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:8px 12px;font-size:12px;color:#b45309;font-weight:600;margin-bottom:10px;line-height:1.6"></div>'+
       invFlag+
@@ -826,7 +841,7 @@ function showAllForms(person){
       '<div id="r'+ri+'otherwrap" style="display:none"><input id="r'+ri+'other" placeholder="\u7528\u9014\u3092\u5165\u529b" style="margin-top:8px;font-size:16px"/></div>'+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">'+
         '<button onclick="toggleDetailB('+ri+')" style="background:none;border:none;color:#2563eb;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-decoration:underline;padding:4px 0">\u270f\ufe0f \u660e\u7d30\u3092\u4fee\u6b63\u3059\u308b\uff08\u4efb\u610f\uff09</button>'+
-        '<button onclick="removeReceiptB('+ri+')" style="background:none;border:none;color:#dc2626;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;padding:4px 0">\U0001f5d1 \u3053\u306e\u30ec\u30b7\u30fc\u30c8\u3092\u524a\u9664</button>'+
+        '<button onclick="removeReceiptB('+ri+')" style="background:none;border:none;color:#dc2626;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;padding:4px 0">\u{1f5d1} \u3053\u306e\u30ec\u30b7\u30fc\u30c8\u3092\u524a\u9664</button>'+
       '</div>'+
       '<div id="r'+ri+'detail" style="display:none;margin-top:12px;padding-top:12px;border-top:1px dashed #e5e7eb">'+
         '<input type="text" id="r'+ri+'store" value="'+(d.store_name||'').replace(/"/g,'&quot;')+'" placeholder="\u652f\u6255\u5148" style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;margin-bottom:6px"/>'+
@@ -977,7 +992,10 @@ function showAllForms(person){
           account: acEl?acEl.value:useVal
         };
       });
-      var rTotal=items.reduce(function(s,it){return s+(Number(it.amount)||0);},0) || d.total || 0;
+      var itemsSum=items.reduce(function(s,it){return s+(Number(it.amount)||0);},0);
+      var taxAmt=(Number(d.tax_8)||0)+(Number(d.tax_10)||0);
+      // レシート記載合計があればそれを優先、なければ品目合計＋税額
+      var rTotal=(d.total!=null)?Number(d.total):(itemsSum+taxAmt);
       return {
         store:store, date:date, invoice:inv,
         use:useVal,
