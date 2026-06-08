@@ -140,6 +140,7 @@ hr{border:none;border-top:1px solid #e5e7eb;margin:12px 0}
 
 <div id="pg1" class="wrap"><div id="area"></div></div>
 <div id="pg2" class="wrap" style="display:none">
+  <div id="close-reminder" style="display:none;background:#fef3c7;border:2px solid #fcd34d;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:#92400e;line-height:1.6"></div>
   <!-- 現金残高カード -->
   <div class="card" style="background:linear-gradient(135deg,#1c1917 60%,#292524);color:#fff;margin-bottom:16px">
     <div style="font-size:11px;color:#9ca3af;margin-bottom:2px">💰 現金残高</div>
@@ -158,12 +159,12 @@ hr{border:none;border-top:1px solid #e5e7eb;margin:12px 0}
     <div class="sc"><div style="font-size:11px;color:#9ca3af;margin-bottom:4px">未精算件数</div><div id="c2" style="font-size:22px;font-weight:700">0件</div></div>
   </div>
   <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <div class="ct" style="margin-bottom:0">申請一覧</div>
-      <button onclick="dlCSV()" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">CSV出力</button>
-      <button onclick="openBulkSettle()" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">一括精算</button>
-      <button onclick="openReceiptTray()" style="background:#0891b2;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">🗂 台紙印刷</button>
-      <button onclick="openCloseModal()" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">月次締め</button>
+    <div class="ct" style="margin-bottom:10px">申請一覧</div>
+    <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
+      <button onclick="openBulkSettle()" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">一括精算</button>
+      <button onclick="dlCSV()" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">CSV出力</button>
+      <button onclick="openReceiptTray()" style="background:#0891b2;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">🗂 台紙印刷</button>
+      <button onclick="openCloseModal()" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">月次締め</button>
     </div>
     <!-- フィルター -->
     <div class="filter-bar">
@@ -282,10 +283,12 @@ hr{border:none;border-top:1px solid #e5e7eb;margin:12px 0}
 <!-- 使い方モーダル -->
 <div class="ov" id="help-ov" onclick="if(event.target===this)closeHelp()" style="display:none">
   <div class="md" style="max-width:480px;max-height:85vh;overflow-y:auto">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <span style="font-size:17px;font-weight:700" id="help-title">📖 使い方</span>
       <button onclick="closeHelp()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#6b7280">✕</button>
     </div>
+    <input type="text" id="help-search" oninput="filterHelp(this.value)" placeholder="🔍 キーワードで検索（例：締め、入金、削除）" style="width:100%;padding:11px 12px;font-size:16px;border:1px solid #e5e7eb;border-radius:8px;font-family:inherit;margin-bottom:12px;outline:none"/>
+    <div id="help-toc" style="background:#f9fafb;border-radius:8px;padding:10px 12px;margin-bottom:14px"></div>
     <div id="help-body" style="font-size:14px;line-height:1.9;color:#374151"></div>
     <button onclick="closeHelp()" style="width:100%;padding:12px;background:#f3f4f6;color:#374151;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:16px">閉じる</button>
   </div>
@@ -320,6 +323,7 @@ hr{border:none;border-top:1px solid #e5e7eb;margin:12px 0}
 var APPS = JSON.parse(localStorage.getItem('apps')||'[]');
 var DEPOSITS = JSON.parse(localStorage.getItem('deposits')||'[]');
 var CARRYOVER = localStorage.getItem('carryover') !== null ? Number(localStorage.getItem('carryover')) : 100000; // 前月繰越（初期値10万円、締め処理後は保存値を使用）
+var LAST_CLOSE_AT = '';
 // 認証トークン（サーバーから取得。コードやURLはHTMLに書かない）
 var USER_TOKEN = sessionStorage.getItem('user_token') || '';
 var ADMIN_TOKEN = sessionStorage.getItem('admin_token') || '';
@@ -469,42 +473,91 @@ function showTab(n){
 }
 
 // 使い方マニュアル
+var HELP_SECTIONS = [];
 function openHelp(){
   var pg2=$e('pg2');
   var isAdmin = pg2 && pg2.style.display==='block';
   if(isAdmin){
     $e('help-title').textContent='📖 使い方（管理）';
-    $e('help-body').innerHTML=
-      '<div style="font-weight:700;color:#1c1917;margin-bottom:4px">申請の確認・精算</div>'+
-      '<div style="margin-bottom:14px">一覧で申請をタップすると詳細が開きます。「未精算」の申請は、詳細画面で受領サインをもらうと精算完了になります。</div>'+
-      '<div style="font-weight:700;color:#16a34a;margin-bottom:4px">💰 一括精算</div>'+
-      '<div style="margin-bottom:14px">同じ人の未精算をまとめて精算できます。「一括精算」→ 精算者を選ぶ → 精算する申請にチェック → 1回のサインでまとめて完了。何度もサインする手間が省けます。</div>'+
-      '<div style="font-weight:700;color:#1c1917;margin-bottom:4px">申請の修正・削除</div>'+
-      '<div style="margin-bottom:14px">詳細画面から、品目・金額・税区分・勘定科目などを修正できます。削除しても一覧に「削除済み」として残り、復元もできます（締め済みの月はロックされます）。</div>'+
-      '<div style="font-weight:700;color:#2563eb;margin-bottom:4px">CSV出力・台紙印刷</div>'+
-      '<div style="margin-bottom:14px">「CSV出力」で会計ソフト取り込み用のデータを書き出せます。「台紙印刷」でレシートの貼り付け台紙を印刷できます。</div>'+
-      '<div style="font-weight:700;color:#7c3aed;margin-bottom:4px">📅 月次締め</div>'+
-      '<div style="margin-bottom:14px">月末に締め処理をすると、残高が翌月の前月繰越に引き継がれます。未精算の申請は締め後も残ります。締め前に必ず内容を確認してください。</div>'+
-      '<div style="font-weight:700;color:#1c1917;margin-bottom:4px">📷 レシート写真</div>'+
-      '<div>申請詳細の「写真を見る」から、保存されたレシート写真（Google Drive）を確認できます。</div>';
+    HELP_SECTIONS = [
+      { id:'h-flow', title:'全体の流れ', kw:'流れ ながれ 全体 ぜんたい 基本',
+        body:'申請者がレシートを撮って申請すると、一覧に「未精算」で表示されます。経理担当が現金を渡すときに受領サインをもらって「精算完了」にします。月末に締め処理をして、その月の現金精算を確定します。' },
+      { id:'h-list', title:'申請一覧の見方', kw:'一覧 いちらん リスト フィルター 見方 みかた',
+        body:'一覧には申請が新しい順に並びます。上の「すべて／未精算／精算完了／入出金記録」で絞り込めます。各申請をタップすると詳細が開き、品目・金額・税区分・インボイス・写真などが確認できます。緑「精算完了」赤「未精算」のバッジで状態が分かります。' },
+      { id:'h-settle', title:'精算する（受領サイン）', kw:'精算 清算 せいさん サイン 受領 じゅりょう 支払 現金を渡す',
+        body:'未精算の申請をタップ → 詳細画面で受領サインをもらう → 「精算」すると精算完了になります。精算した日が精算日として記録され、現金出納帳に出金として記帳されます。サインは「確かに現金を受け取った」証拠として残ります。' },
+      { id:'h-bulk', title:'💰 一括精算（まとめて精算）', kw:'一括 いっかつ まとめて 一括精算 サイン 何度も 手間',
+        body:'同じ人の未精算をまとめて1回のサインで精算できます。手順：「一括精算」ボタン → 精算者を選ぶ → その人の未精算が一覧で出る（最初は全部チェック済み）→ 精算するものだけチェックを残す → 「まとめて精算する」→ 1回サイン → 完了。選んだ全件が同じ精算日で精算され、出納帳にまとめて記帳されます。役員がまとめて受け取るときに便利です。' },
+      { id:'h-edit', title:'✏️ 申請の修正', kw:'修正 しゅうせい 編集 へんしゅう 直す なおす 金額 勘定科目',
+        body:'申請をタップ → 「✏️ 修正する」で、品目名・金額・税区分・勘定科目・支払先・取引日・インボイス番号を直せます。読み取り間違いや、用途（勘定科目）の調整はここで行います。修正すると合計も自動で計算し直されます。' },
+      { id:'h-delete', title:'🗑 削除と復元', kw:'削除 さくじょ 消す けす 復元 ふくげん 戻す もどす 取り消し',
+        body:'申請をタップ → 「🗑 削除する」で削除できます。削除しても完全には消えず、一覧に「削除済み」としてグレーで残り、集計からは除外されます。間違えて削除しても、その申請を開いて「↩️ 復元する」で元に戻せます。削除・復元の履歴は現金出納帳にも記録されます。' },
+      { id:'h-deposit', title:'＋ 入金処理（金庫にお金を入れたとき）', kw:'入金 にゅうきん 金庫 きんこ 補充 ほじゅう 銀行 下ろす お金を入れる 残高',
+        body:'経理担当が銀行からお金を下ろして金庫に入れたときは、「＋ 入金処理」で記録します。金額と日付（必要ならメモ）を入れて確定すると、現金残高に加算され、出納帳に入金として記帳されます。これをしないと残高が合わなくなるので、現金を補充したら必ず記録してください。' },
+      { id:'h-close', title:'📅 月次締めのルール', kw:'締め しめ 月次 げつじ 月末 げつまつ 繰越 くりこし リセット ルール',
+        body:'月初から月末までに「精算された」ものを、その月の現金精算として確定します。未精算のものは翌月に繰り越されます。締めは毎月末に実施します。<br><br>「月次締め」ボタンを押すと、その月の残高が翌月の前月繰越に引き継がれ、アプリ上の申請履歴・入金履歴がリセットされます（データはスプレッドシートに残ります）。<br><br><b>⚠️ 注意：締めるとリセットされるので、締める前に必ず内容（精算漏れがないか）を確認してください。未精算の申請は締め後も残ります。</b>' },
+      { id:'h-remind', title:'締め忘れの通知', kw:'締め忘れ しめわすれ 通知 つうじ リマインド 警告 けいこく 忘れ わすれ',
+        body:'前回の締めから月をまたいでいるのに締めていない場合、管理画面の上部に「締め処理をしてください」という黄色いお知らせが出ます。月末の締めを忘れないための通知です。お知らせが出たら、内容を確認して月次締めを行ってください。' },
+      { id:'h-csv', title:'CSV出力（会計ソフト用）', kw:'CSV しーえすぶい 出力 しゅつりょく 会計ソフト エクスポート ダウンロード',
+        body:'「CSV出力」で、その期間の精算データを会計ソフト取り込み用のCSVファイルとして書き出せます。1レシート1行（税率が混在する場合は税率ごとに分割）で出力されます。' },
+      { id:'h-tray', title:'🗂 台紙印刷', kw:'台紙 だいし 印刷 いんさつ プリント 貼り付け はりつけ レシート整理',
+        body:'「🗂 台紙印刷」で、レシートを貼り付けるための台紙を印刷できます。申請IDが印字されるので、レシート原本を申請ごとに整理・保管するのに使えます。' },
+      { id:'h-photo', title:'📷 レシート写真の確認', kw:'写真 しゃしん 画像 がぞう Drive ドライブ 原本 げんぽん 確認',
+        body:'申請詳細の「📷 写真を見る」から、保存されたレシート写真を確認できます。写真はGoogle Driveの「現金精算写真」フォルダに、月ごとのフォルダ（例：2026-06）に分けて自動保存されています。' },
+      { id:'h-invoice', title:'インボイス（適格／要確認）', kw:'インボイス 適格 てきかく 要確認 ようかくにん 登録番号 課税 免税',
+        body:'レシートに登録番号（T+13桁）があれば「適格」、なければ「要確認」と表示されます。「要確認」は免税事業者と断定するものではなく、印字漏れや読み取り漏れの可能性も含むので、最終的な判断は事務所で行ってください。' },
+    ];
   }else{
     $e('help-title').textContent='📖 使い方（申請）';
-    $e('help-body').innerHTML=
-      '<div style="font-weight:700;color:#1c1917;margin-bottom:4px">① 精算者を選ぶ</div>'+
-      '<div style="margin-bottom:14px">最初に自分の名前を選びます。</div>'+
-      '<div style="font-weight:700;color:#1c1917;margin-bottom:4px">② レシートを撮る・選ぶ</div>'+
-      '<div style="margin-bottom:14px">「写真を撮る」でその場で撮影、または「タップして選択」で保存済みの写真から選べます。複数枚まとめて選べます。<br><b>※1枚ずつ撮るほうが、文字を正確に読み取れます。</b></div>'+
-      '<div style="font-weight:700;color:#1c1917;margin-bottom:4px">③ 内容を確認して用途を選ぶ</div>'+
-      '<div style="margin-bottom:14px">読み取った合計金額を確認し、用途を選びます。金額がおかしいときは⚠️が出るので、その場合は「明細を修正」で直してください。1枚のレシートに用途が複数あるときも「明細を修正」から品目ごとに選べます。</div>'+
-      '<div style="font-weight:700;color:#7c3aed;margin-bottom:4px">✍️ 手入力で追加</div>'+
-      '<div style="margin-bottom:14px">うまく読み取れないレシートは「＋ 手入力でレシートを追加」で、金額だけ手で入力できます。写真も一緒に保存できます。</div>'+
-      '<div style="font-weight:700;color:#16a34a;margin-bottom:4px">④ 申請する</div>'+
-      '<div style="margin-bottom:14px">「申請内容を確認する」→「送信する」で申請完了です。</div>'+
-      '<div style="font-weight:700;color:#2563eb;margin-bottom:4px">💰 その場で精算する場合</div>'+
-      '<div>申請後の画面で「続けて精算する（受領サイン）」を押し、サインをすると精算完了になります。あとで精算する場合は押さなくてOKです。</div>';
+    HELP_SECTIONS = [
+      { id:'a-1', title:'① 精算者を選ぶ', kw:'精算者 名前 選ぶ えらぶ 最初',
+        body:'最初に自分の名前を選びます。' },
+      { id:'a-2', title:'② レシートを撮る・選ぶ', kw:'撮る とる 写真 選ぶ カメラ アップロード 複数',
+        body:'「写真を撮る」でその場で撮影、または「タップして選択」で保存済みの写真から選べます。複数枚まとめて選べます。<br><b>※1枚ずつ撮るほうが、文字を正確に読み取れます。</b>' },
+      { id:'a-3', title:'③ 内容を確認して用途を選ぶ', kw:'確認 用途 ようと 勘定科目 金額 明細 修正 複数',
+        body:'読み取った合計金額を確認し、用途を選びます。金額がおかしいときは⚠️が出るので、その場合は「明細を修正」で直してください。1枚のレシートに用途が複数あるときも「明細を修正」から品目ごとに選べます。' },
+      { id:'a-manual', title:'✍️ 手入力で追加', kw:'手入力 てにゅうりょく 読み取れない 失敗 金額 写真',
+        body:'うまく読み取れないレシートは「＋ 手入力でレシートを追加」で、金額だけ手で入力できます。「写真を撮る／写真を選ぶ」で写真も一緒に保存できます。' },
+      { id:'a-4', title:'④ 申請する', kw:'申請 しんせい 送信 そうしん 完了',
+        body:'「申請内容を確認する」→「送信する」で申請完了です。' },
+      { id:'a-settle', title:'💰 その場で精算する場合', kw:'精算 清算 せいさん サイン 受領 その場 現金',
+        body:'申請後の画面で「続けて精算する（受領サイン）」を押し、サインをすると精算完了になります。あとで精算する場合は押さなくてOKです。' },
+    ];
   }
+  renderHelp('');
+  $e('help-search').value='';
   $e('help-ov').style.display='flex';
 }
+function renderHelp(filter){
+  var f = (filter||'').trim().toLowerCase();
+  var matched = HELP_SECTIONS.filter(function(s){
+    if(!f) return true;
+    return (s.title+' '+s.kw+' '+s.body).toLowerCase().indexOf(f) !== -1;
+  });
+  // 目次
+  var toc = $e('help-toc');
+  if(!f){
+    toc.style.display='block';
+    toc.innerHTML = '<div style="font-size:11px;font-weight:700;color:#9ca3af;margin-bottom:6px">目次（タップで移動）</div>'+
+      matched.map(function(s){
+        return '<div onclick="document.getElementById(\''+s.id+'\').scrollIntoView({behavior:\'smooth\'})" style="font-size:13px;color:#2563eb;padding:3px 0;cursor:pointer">・'+s.title+'</div>';
+      }).join('');
+  } else {
+    toc.style.display='none';
+  }
+  // 本文
+  var body = $e('help-body');
+  if(matched.length===0){
+    body.innerHTML = '<div style="text-align:center;color:#9ca3af;padding:24px">「'+filter+'」に一致する項目が見つかりません</div>';
+    return;
+  }
+  body.innerHTML = matched.map(function(s){
+    return '<div id="'+s.id+'" style="margin-bottom:18px;scroll-margin-top:10px">'+
+      '<div style="font-weight:700;color:#1c1917;margin-bottom:4px;border-left:3px solid #16a34a;padding-left:8px">'+s.title+'</div>'+
+      '<div style="padding-left:11px">'+s.body+'</div></div>';
+  }).join('');
+}
+function filterHelp(v){ renderHelp(v); }
 function closeHelp(){ $e('help-ov').style.display='none'; }
 
 function setFilter(f){
@@ -1404,6 +1457,7 @@ function rA(){
         var maxSeq = Math.max(localSeq, gasSeq);
         localStorage.setItem('last_seq', String(maxSeq));
       }
+      LAST_CLOSE_AT = res.last_close_at || '';
     } else {
       // GAS通信失敗時はlocalStorageにフォールバック
       var savedCarryover = localStorage.getItem('carryover');
@@ -1418,12 +1472,41 @@ function rA(){
       DEPOSITS = (d.ok && d.data) ? d.data : [];
       localStorage.setItem('deposits', JSON.stringify(DEPOSITS));
       renderAdminList();
+      checkCloseReminder();
     })
     .catch(function(e){
       console.log('Deposit load error:', e);
       renderAdminList();
+      checkCloseReminder();
     });
   });
+}
+
+// 締め忘れリマインド：前回の締めから月をまたいでいて未締めなら警告
+function checkCloseReminder(){
+  var el=$e('close-reminder');
+  if(!el) return;
+  var now=new Date();
+  var ym=now.getFullYear()+'-'+('0'+(now.getMonth()+1)).slice(-2);
+  // 前回締めの年月
+  var lastYm='';
+  if(LAST_CLOSE_AT){
+    var d=new Date(LAST_CLOSE_AT);
+    if(!isNaN(d.getTime())) lastYm=d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2);
+  }
+  // 今月まだ締めていない＝前回締め年月が今月でない
+  // かつ、前月以前の精算済み申請がある（締める対象がある）場合に警告
+  var hasPrevPaid = APPS.some(function(a){
+    if(a.deleted || !isPaid(a)) return false;
+    var sd=(a.settlement_date||'').slice(0,7);
+    return sd && sd < ym;
+  });
+  if(lastYm !== ym && hasPrevPaid){
+    el.style.display='block';
+    el.innerHTML='⚠️ <b>締め処理がまだのようです。</b><br>前月までの精算済みの申請があります。月末の締め処理を忘れずに行ってください。（「月次締め」ボタン）';
+  } else {
+    el.style.display='none';
+  }
 }
 
 function calcBalance(){
