@@ -92,7 +92,27 @@ export default async function handler(req, res) {
     let text = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
     const s = text.indexOf('{'), e = text.lastIndexOf('}');
     if (s === -1 || e === -1) return res.status(500).json({ error: 'JSONが見つかりません' });
-    const parsedRaw = JSON.parse(text.slice(s, e + 1));
+    let jsonStr = text.slice(s, e + 1);
+
+    // JSONを解析（崩れていれば自動修復してから再試行）
+    let parsedRaw;
+    try {
+      parsedRaw = JSON.parse(jsonStr);
+    } catch (e1) {
+      const repaired = repairJSON(jsonStr);
+      try {
+        parsedRaw = JSON.parse(repaired);
+      } catch (e2) {
+        // それでもダメなら、エラー位置の手前までで切り詰めて配列・オブジェクトを閉じてみる
+        const salvaged = salvageJSON(jsonStr);
+        if (salvaged) {
+          try { parsedRaw = JSON.parse(salvaged); } catch (e3) { parsedRaw = null; }
+        }
+        if (!parsedRaw) {
+          return res.status(500).json({ error: 'レシートの読み取りに失敗しました（写真を撮り直すか、1枚ずつお試しください）' });
+        }
+      }
+    }
 
     // レシートでないと判定された場合
     if (parsedRaw.error) {
@@ -144,4 +164,60 @@ export default async function handler(req, res) {
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
+}
+
+// JSONのよくある崩れを修復する
+function repairJSON(str) {
+  let s = str;
+  // 制御文字（生の改行・タブが文字列内に紛れ込んだ場合）を除去しすぎない範囲で正規化
+  // 末尾の余分なカンマ（,} や ,]）を除去
+  s = s.replace(/,\s*([}\]])/g, '$1');
+  // 連続するカンマを1つに
+  s = s.replace(/,\s*,/g, ',');
+  // 数値の桁区切りカンマ（"amount": 1,572 のような誤り）を除去：数字,数字3桁 を結合
+  s = s.replace(/(\d),(\d{3})(?=[\s,}\]])/g, '$1$2');
+  // 全角の引用符やコロンを半角へ
+  s = s.replace(/：/g, ':').replace(/、/g, ',');
+  return s;
+}
+
+// 壊れたJSONを、途中まででも有効な形に切り詰めて復元する
+// 開いている { [ を数えて、足りない分を閉じる
+function salvageJSON(str) {
+  let s = repairJSON(str);
+  // 最後の完全な要素までで切る：直近の } または ] の位置を探しつつ括弧を閉じる
+  let depth = 0, inStr = false, esc = false, stack = [];
+  let lastSafe = -1;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (esc) { esc = false; continue; }
+    if (c === '\\') { esc = true; continue; }
+    if (c === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (c === '{' || c === '[') { stack.push(c); }
+    else if (c === '}' || c === ']') { stack.pop(); if (stack.length <= 1) lastSafe = i; }
+    else if (c === ',' && stack.length <= 2) { lastSafe = i; }
+  }
+  if (lastSafe === -1) return null;
+  // lastSafeまで取り、開いている括弧を閉じる
+  let head = s.slice(0, lastSafe);
+  // 末尾がカンマなら除去
+  head = head.replace(/,\s*$/, '');
+  // 開いている括弧を数えて閉じる
+  let open = [], inS = false, es = false;
+  for (let i = 0; i < head.length; i++) {
+    const c = head[i];
+    if (es) { es = false; continue; }
+    if (c === '\\') { es = true; continue; }
+    if (c === '"') { inS = !inS; continue; }
+    if (inS) continue;
+    if (c === '{' || c === '[') open.push(c);
+    else if (c === '}') { if (open[open.length-1] === '{') open.pop(); }
+    else if (c === ']') { if (open[open.length-1] === '[') open.pop(); }
+  }
+  let close = '';
+  for (let i = open.length - 1; i >= 0; i--) {
+    close += (open[i] === '{') ? '}' : ']';
+  }
+  return head + close;
 }
