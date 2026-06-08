@@ -66,8 +66,8 @@ hr{border:none;border-top:1px solid #e5e7eb;margin:12px 0}
 .pw-cancel{width:100%;padding:10px;background:#f3f4f6;color:#374151;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:6px}
 
 /* 管理画面フィルター */
-.filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
-.fbtn{padding:6px 14px;border:1px solid #e5e7eb;border-radius:20px;background:#fff;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:#6b7280}
+.filter-bar{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:16px}
+.fbtn{padding:6px 12px;border:1px solid #e5e7eb;border-radius:20px;background:#fff;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:#6b7280;white-space:nowrap;flex-shrink:0}
 .fbtn.on{background:#1c1917;color:#fff;border-color:#1c1917}
 
 @media print {
@@ -100,7 +100,7 @@ hr{border:none;border-top:1px solid #e5e7eb;margin:12px 0}
   <div class="tab on" id="t1" onclick="showTab(1)">申請</div>
   <div class="tab" id="t2" onclick="tryAdmin()" style="display:none">管理</div>
   <div style="margin-left:auto;display:flex;gap:6px">
-    <button onclick="openHelp()" style="background:none;border:1px solid #4b5563;border-radius:6px;color:#9ca3af;font-size:11px;padding:4px 10px;cursor:pointer;font-family:inherit">？使い方</button>
+    <button onclick="openHelp()" style="background:none;border:1px solid #4b5563;border-radius:6px;color:#9ca3af;font-size:11px;padding:4px 10px;cursor:pointer;font-family:inherit">FAQ</button>
     <button id="admin-toggle-btn" onclick="tryAdmin()" style="background:none;border:1px solid #4b5563;border-radius:6px;color:#9ca3af;font-size:11px;padding:4px 10px;cursor:pointer;font-family:inherit">管理</button>
   </div>
 </nav>
@@ -159,12 +159,14 @@ hr{border:none;border-top:1px solid #e5e7eb;margin:12px 0}
     <div class="sc"><div style="font-size:11px;color:#9ca3af;margin-bottom:4px">未精算件数</div><div id="c2" style="font-size:22px;font-weight:700">0件</div></div>
   </div>
   <div class="card">
-    <div class="ct" style="margin-bottom:10px">申請一覧</div>
-    <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
-      <button onclick="openBulkSettle()" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">一括精算</button>
-      <button onclick="dlCSV()" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">CSV出力</button>
-      <button onclick="openReceiptTray()" style="background:#0891b2;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">🗂 台紙印刷</button>
-      <button onclick="openCloseModal()" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">月次締め</button>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+      <div class="ct" style="margin-bottom:0;white-space:nowrap">申請一覧</div>
+      <div style="display:flex;gap:5px;overflow-x:auto;flex:1;-webkit-overflow-scrolling:touch">
+        <button onclick="openBulkSettle()" style="background:#16a34a;color:#fff;border:none;border-radius:7px;padding:6px 9px;font-size:10px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">一括精算</button>
+        <button onclick="dlCSV()" style="background:#2563eb;color:#fff;border:none;border-radius:7px;padding:6px 9px;font-size:10px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">CSV出力</button>
+        <button onclick="openReceiptTray()" style="background:#0891b2;color:#fff;border:none;border-radius:7px;padding:6px 9px;font-size:10px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">🗂台紙印刷</button>
+        <button onclick="openCloseModal()" style="background:#7c3aed;color:#fff;border:none;border-radius:7px;padding:6px 9px;font-size:10px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">月次締め</button>
+      </div>
     </div>
     <!-- フィルター -->
     <div class="filter-bar">
