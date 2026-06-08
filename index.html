@@ -99,7 +99,8 @@ hr{border:none;border-top:1px solid #e5e7eb;margin:12px 0}
   <div class="logo">💴 現金精算</div>
   <div class="tab on" id="t1" onclick="showTab(1)">申請</div>
   <div class="tab" id="t2" onclick="tryAdmin()" style="display:none">管理</div>
-  <div style="margin-left:auto">
+  <div style="margin-left:auto;display:flex;gap:6px">
+    <button onclick="openHelp()" style="background:none;border:1px solid #4b5563;border-radius:6px;color:#9ca3af;font-size:11px;padding:4px 10px;cursor:pointer;font-family:inherit">？使い方</button>
     <button id="admin-toggle-btn" onclick="tryAdmin()" style="background:none;border:1px solid #4b5563;border-radius:6px;color:#9ca3af;font-size:11px;padding:4px 10px;cursor:pointer;font-family:inherit">管理</button>
   </div>
 </nav>
@@ -160,6 +161,7 @@ hr{border:none;border-top:1px solid #e5e7eb;margin:12px 0}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <div class="ct" style="margin-bottom:0">申請一覧</div>
       <button onclick="dlCSV()" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">CSV出力</button>
+      <button onclick="openBulkSettle()" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">一括精算</button>
       <button onclick="openReceiptTray()" style="background:#0891b2;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">🗂 台紙印刷</button>
       <button onclick="openCloseModal()" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">月次締め</button>
     </div>
@@ -244,6 +246,48 @@ hr{border:none;border-top:1px solid #e5e7eb;margin:12px 0}
       <div style="font-size:13px;color:#6b7280;margin-bottom:16px" id="close-done-msg"></div>
       <button onclick="closeCloseModal()" style="width:100%;padding:12px;background:#f3f4f6;color:#374151;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">閉じる</button>
     </div>
+  </div>
+</div>
+
+<!-- 一括精算モーダル -->
+<div class="ov" id="bulk-ov" onclick="if(event.target===this)closeBulkSettle()" style="display:none">
+  <div class="md" style="max-width:460px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <span style="font-size:17px;font-weight:700">💰 一括精算</span>
+      <button onclick="closeBulkSettle()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#6b7280">✕</button>
+    </div>
+    <div id="bulk-step1">
+      <label style="display:block;font-size:12px;font-weight:600;color:#6b7280;margin-bottom:6px">精算者を選択</label>
+      <select id="bulk-person" onchange="renderBulkList()" style="width:100%;padding:11px;font-size:16px;border:1px solid #e5e7eb;border-radius:8px;font-family:inherit;margin-bottom:14px"></select>
+      <div id="bulk-list"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;background:#1c1917;color:#fff;border-radius:8px;padding:12px 16px;margin-top:12px">
+        <span style="font-weight:700">選択合計</span>
+        <span style="font-weight:700;font-size:18px;color:#86efac" id="bulk-total">¥0</span>
+      </div>
+      <button onclick="bulkToSign()" id="bulk-next" style="width:100%;padding:14px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:14px">選択した申請をまとめて精算する →</button>
+    </div>
+    <div id="bulk-step2" style="display:none">
+      <div style="font-size:13px;color:#6b7280;margin-bottom:10px">受領サイン（<b id="bulk-cnt">0</b>件・合計 <b id="bulk-total2" style="color:#dc2626">¥0</b>）</div>
+      <canvas id="bcvs" height="170" style="border:2px solid #e5e7eb;border-radius:8px;width:100%;touch-action:none;cursor:crosshair;background:#fafafa;display:block"></canvas>
+      <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+        <button id="bclr" style="padding:6px 12px;background:#f3f4f6;border:none;border-radius:8px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600">クリア</button>
+        <span id="bsl" style="display:none;font-size:12px;color:#16a34a;font-weight:600">✓ 署名済み</span>
+      </div>
+      <button onclick="bulkConfirm()" style="width:100%;padding:14px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:14px">この内容で精算する</button>
+      <button onclick="bulkBack()" style="width:100%;padding:12px;background:#f3f4f6;color:#374151;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:8px">← 戻る</button>
+    </div>
+  </div>
+</div>
+
+<!-- 使い方モーダル -->
+<div class="ov" id="help-ov" onclick="if(event.target===this)closeHelp()" style="display:none">
+  <div class="md" style="max-width:480px;max-height:85vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <span style="font-size:17px;font-weight:700" id="help-title">📖 使い方</span>
+      <button onclick="closeHelp()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#6b7280">✕</button>
+    </div>
+    <div id="help-body" style="font-size:14px;line-height:1.9;color:#374151"></div>
+    <button onclick="closeHelp()" style="width:100%;padding:12px;background:#f3f4f6;color:#374151;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:16px">閉じる</button>
   </div>
 </div>
 
@@ -423,6 +467,45 @@ function showTab(n){
   }
   if(n===2) rA();
 }
+
+// 使い方マニュアル
+function openHelp(){
+  var pg2=$e('pg2');
+  var isAdmin = pg2 && pg2.style.display==='block';
+  if(isAdmin){
+    $e('help-title').textContent='📖 使い方（管理）';
+    $e('help-body').innerHTML=
+      '<div style="font-weight:700;color:#1c1917;margin-bottom:4px">申請の確認・精算</div>'+
+      '<div style="margin-bottom:14px">一覧で申請をタップすると詳細が開きます。「未精算」の申請は、詳細画面で受領サインをもらうと精算完了になります。</div>'+
+      '<div style="font-weight:700;color:#16a34a;margin-bottom:4px">💰 一括精算</div>'+
+      '<div style="margin-bottom:14px">同じ人の未精算をまとめて精算できます。「一括精算」→ 精算者を選ぶ → 精算する申請にチェック → 1回のサインでまとめて完了。何度もサインする手間が省けます。</div>'+
+      '<div style="font-weight:700;color:#1c1917;margin-bottom:4px">申請の修正・削除</div>'+
+      '<div style="margin-bottom:14px">詳細画面から、品目・金額・税区分・勘定科目などを修正できます。削除しても一覧に「削除済み」として残り、復元もできます（締め済みの月はロックされます）。</div>'+
+      '<div style="font-weight:700;color:#2563eb;margin-bottom:4px">CSV出力・台紙印刷</div>'+
+      '<div style="margin-bottom:14px">「CSV出力」で会計ソフト取り込み用のデータを書き出せます。「台紙印刷」でレシートの貼り付け台紙を印刷できます。</div>'+
+      '<div style="font-weight:700;color:#7c3aed;margin-bottom:4px">📅 月次締め</div>'+
+      '<div style="margin-bottom:14px">月末に締め処理をすると、残高が翌月の前月繰越に引き継がれます。未精算の申請は締め後も残ります。締め前に必ず内容を確認してください。</div>'+
+      '<div style="font-weight:700;color:#1c1917;margin-bottom:4px">📷 レシート写真</div>'+
+      '<div>申請詳細の「写真を見る」から、保存されたレシート写真（Google Drive）を確認できます。</div>';
+  }else{
+    $e('help-title').textContent='📖 使い方（申請）';
+    $e('help-body').innerHTML=
+      '<div style="font-weight:700;color:#1c1917;margin-bottom:4px">① 精算者を選ぶ</div>'+
+      '<div style="margin-bottom:14px">最初に自分の名前を選びます。</div>'+
+      '<div style="font-weight:700;color:#1c1917;margin-bottom:4px">② レシートを撮る・選ぶ</div>'+
+      '<div style="margin-bottom:14px">「写真を撮る」でその場で撮影、または「タップして選択」で保存済みの写真から選べます。複数枚まとめて選べます。<br><b>※1枚ずつ撮るほうが、文字を正確に読み取れます。</b></div>'+
+      '<div style="font-weight:700;color:#1c1917;margin-bottom:4px">③ 内容を確認して用途を選ぶ</div>'+
+      '<div style="margin-bottom:14px">読み取った合計金額を確認し、用途を選びます。金額がおかしいときは⚠️が出るので、その場合は「明細を修正」で直してください。1枚のレシートに用途が複数あるときも「明細を修正」から品目ごとに選べます。</div>'+
+      '<div style="font-weight:700;color:#7c3aed;margin-bottom:4px">✍️ 手入力で追加</div>'+
+      '<div style="margin-bottom:14px">うまく読み取れないレシートは「＋ 手入力でレシートを追加」で、金額だけ手で入力できます。写真も一緒に保存できます。</div>'+
+      '<div style="font-weight:700;color:#16a34a;margin-bottom:4px">④ 申請する</div>'+
+      '<div style="margin-bottom:14px">「申請内容を確認する」→「送信する」で申請完了です。</div>'+
+      '<div style="font-weight:700;color:#2563eb;margin-bottom:4px">💰 その場で精算する場合</div>'+
+      '<div>申請後の画面で「続けて精算する（受領サイン）」を押し、サインをすると精算完了になります。あとで精算する場合は押さなくてOKです。</div>';
+  }
+  $e('help-ov').style.display='flex';
+}
+function closeHelp(){ $e('help-ov').style.display='none'; }
 
 function setFilter(f){
   CURRENT_FILTER = f;
@@ -658,11 +741,12 @@ function syncUseSelections(){
     }
   });
 }
-// 手入力レシートに写真を添付（分析せず保存用に保持）
-function attachManualPhoto(ri){
+// 手入力レシートに写真を添付（分析せず保存用に保持）。useCamera=trueでカメラ優先
+function attachManualPhoto(ri, useCamera){
   syncUseSelections();
   var fi=document.createElement('input');
   fi.type='file'; fi.accept='image/*'; fi.style.display='none';
+  if(useCamera) fi.capture='environment';
   document.body.appendChild(fi);
   fi.onchange=function(){
     var f=fi.files[0]; fi.remove();
@@ -859,11 +943,14 @@ function showAllForms(person){
         '<label style="display:block;font-size:12px;font-weight:600;color:#6b7280;margin:10px 0 4px">用途を選んでください</label>'+
         '<select id="r'+ri+'use" onchange="setUseB('+ri+',this.value)" style="width:100%;padding:11px;font-size:16px;border:1px solid #e5e7eb;border-radius:8px;font-family:inherit"><option value="">\u25bc 選択してください</option>'+acOptM+'<option value="__other">その他（自由入力）</option></select>'+
         '<div id="r'+ri+'otherwrap" style="display:none"><input id="r'+ri+'other" placeholder="用途を入力" style="margin-top:8px;font-size:16px;width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:8px;font-family:inherit"/></div>'+
-        '<label style="display:block;font-size:12px;font-weight:600;color:#6b7280;margin:12px 0 4px">レシート写真（任意・保存用）</label>'+
+        '<label style="display:block;font-size:12px;font-weight:600;color:#6b7280;margin:12px 0 4px">レシート写真</label>'+
         '<div id="r'+ri+'mphotowrap">'+
           (r.b64
             ? '<div style="display:flex;align-items:center;gap:10px"><img src="'+r.preview+'" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb"/><button onclick="clearManualPhoto('+ri+')" style="background:none;border:none;color:#dc2626;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">写真を削除</button></div>'
-            : '<button onclick="attachManualPhoto('+ri+')" style="width:100%;padding:11px;border:2px dashed #cbd5e1;border-radius:8px;background:#fff;color:#475569;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">\u{1f4f7} 写真を撮る・選ぶ（分析はしません）</button>')+
+            : '<div style="display:flex;gap:8px">'+
+              '<button onclick="attachManualPhoto('+ri+',true)" style="flex:1;padding:11px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#475569;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">\u{1f4f7} 写真を撮る</button>'+
+              '<button onclick="attachManualPhoto('+ri+',false)" style="flex:1;padding:11px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#475569;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">\u{1f5bc}\ufe0f 写真を選ぶ</button>'+
+              '</div>')+
         '</div>';
       el.appendChild(card);
       return;
@@ -1607,6 +1694,86 @@ function renderAdminList(){
       '<div style="text-align:right"><div style="font-weight:700;color:#dc2626;font-size:16px">¥'+fmt(a.total)+'</div>'+stLabel(a.status)+'</div></div>'+
       '<div style="font-size:11px;color:#9ca3af;margin-top:6px">'+a.id+'</div></div>';
   }).join('');
+}
+
+// ===== 一括精算 =====
+var BULK_PEOPLE = ['村井数正','松村武志','寺沢守弘','山田麻里子','菅生勇理愛'];
+var BULK_SELECTED = [];
+function openBulkSettle(){
+  var sel=$e('bulk-person');
+  // 未精算がある人だけ選べるように、全員＋件数を出す
+  sel.innerHTML='<option value="">-- 選択してください --</option>'+BULK_PEOPLE.map(function(p){
+    var cnt=APPS.filter(function(a){return !a.deleted && !isPaid(a) && a.person===p;}).length;
+    return '<option value="'+p+'">'+p+'（未精算 '+cnt+'件）</option>';
+  }).join('');
+  $e('bulk-step1').style.display='block';
+  $e('bulk-step2').style.display='none';
+  $e('bulk-list').innerHTML='<p style="color:#9ca3af;text-align:center;padding:20px;font-size:13px">精算者を選んでください</p>';
+  $e('bulk-total').textContent='¥0';
+  BULK_SELECTED=[];
+  $e('bulk-ov').style.display='flex';
+}
+function closeBulkSettle(){ $e('bulk-ov').style.display='none'; }
+function renderBulkList(){
+  var p=$e('bulk-person').value;
+  var host=$e('bulk-list');
+  if(!p){ host.innerHTML='<p style="color:#9ca3af;text-align:center;padding:20px;font-size:13px">精算者を選んでください</p>'; $e('bulk-total').textContent='¥0'; return; }
+  var list=APPS.filter(function(a){return !a.deleted && !isPaid(a) && a.person===p;});
+  if(list.length===0){ host.innerHTML='<p style="color:#9ca3af;text-align:center;padding:20px;font-size:13px">未精算の申請はありません</p>'; $e('bulk-total').textContent='¥0'; return; }
+  host.innerHTML=list.map(function(a){
+    return '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:8px;cursor:pointer">'+
+      '<input type="checkbox" value="'+a.id+'" data-total="'+(a.total||0)+'" onchange="recalcBulk()" checked style="width:20px;height:20px"/>'+
+      '<div style="flex:1"><div style="font-weight:600;font-size:13px">'+a.id+'</div>'+
+      '<div style="font-size:12px;color:#9ca3af">'+(a.date||'')+'　'+(a.receipts?a.receipts.length:1)+'枚</div></div>'+
+      '<div style="font-weight:700;color:#dc2626">¥'+fmt(a.total)+'</div></label>';
+  }).join('');
+  recalcBulk();
+}
+function recalcBulk(){
+  var boxes=$e('bulk-list').querySelectorAll('input[type=checkbox]');
+  var total=0; BULK_SELECTED=[];
+  boxes.forEach(function(b){ if(b.checked){ total+=Number(b.getAttribute('data-total'))||0; BULK_SELECTED.push(b.value); } });
+  $e('bulk-total').textContent='¥'+fmt(total);
+}
+function bulkToSign(){
+  if(BULK_SELECTED.length===0){ alert('精算する申請を選んでください'); return; }
+  var total=0;
+  $e('bulk-list').querySelectorAll('input[type=checkbox]').forEach(function(b){ if(b.checked) total+=Number(b.getAttribute('data-total'))||0; });
+  $e('bulk-cnt').textContent=BULK_SELECTED.length;
+  $e('bulk-total2').textContent='¥'+fmt(total);
+  $e('bulk-step1').style.display='none';
+  $e('bulk-step2').style.display='block';
+  // サインキャンバス初期化
+  var cv=$e('bcvs'); cv.width=cv.parentElement.offsetWidth-40;
+  var ctx=cv.getContext('2d'); ctx.strokeStyle='#1c1917'; ctx.lineWidth=2.5; ctx.lineCap='round';
+  ctx.clearRect(0,0,cv.width,cv.height);
+  var bsigned=false, bdraw=false;
+  function xy(e){var r=cv.getBoundingClientRect(),s=e.touches?e.touches[0]:e;return{x:s.clientX-r.left,y:s.clientY-r.top};}
+  cv.onmousedown=cv.ontouchstart=function(e){e.preventDefault();bdraw=true;var pt=xy(e);ctx.beginPath();ctx.moveTo(pt.x,pt.y);};
+  cv.onmousemove=cv.ontouchmove=function(e){e.preventDefault();if(!bdraw)return;var pt=xy(e);ctx.lineTo(pt.x,pt.y);ctx.stroke();bsigned=true;$e('bsl').style.display='inline';};
+  cv.onmouseup=cv.ontouchend=function(){bdraw=false;};
+  $e('bclr').onclick=function(){ctx.clearRect(0,0,cv.width,cv.height);bsigned=false;$e('bsl').style.display='none';};
+  cv._isSigned=function(){return bsigned;};
+}
+function bulkBack(){ $e('bulk-step2').style.display='none'; $e('bulk-step1').style.display='block'; }
+function bulkConfirm(){
+  var cv=$e('bcvs');
+  if(!cv._isSigned || !cv._isSigned()){ alert('受領サインを記入してください'); return; }
+  var sig=cv.toDataURL();
+  var sd=today();
+  var nowIso=new Date().toISOString();
+  // 選択した申請をすべて精算済みにする（同じサイン・同じ精算日）
+  BULK_SELECTED.forEach(function(id){
+    var a=APPS.find(function(x){return x.id===id;});
+    if(!a) return;
+    a.status='paid'; a.settlement_date=sd; a.client_sign=sig; a.client_signed_at=nowIso; a.paid_at=nowIso;
+    updateSheet(id, {status:'paid', settlement_date:sd, client_sign:sig, client_signed_at:nowIso, paid_at:nowIso});
+  });
+  sv();
+  closeBulkSettle();
+  renderAdminList();
+  updateBalanceUI();
+  alert(BULK_SELECTED.length+'件をまとめて精算しました');
 }
 
 function shD(id){
