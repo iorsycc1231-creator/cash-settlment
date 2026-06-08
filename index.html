@@ -482,6 +482,14 @@ function showUpload(){
     '<div style="font-size:12px;color:#9ca3af">JPG・PNG・HEIC　複数枚同時選択OK</div>';
   uploadArea.appendChild(uz);
 
+  // 「写真を撮る」ボタン（Android Chrome等でカメラを直接起動できるように）
+  var camBtn = document.createElement('button');
+  camBtn.id = 'cam-btn';
+  camBtn.className = 'btn bw';
+  camBtn.style.marginTop = '10px';
+  camBtn.textContent = '📷 写真を撮る';
+  uploadArea.appendChild(camBtn);
+
   var thumbs = document.createElement('div');
   thumbs.id = 'thumbs';
   thumbs.style.cssText = 'display:none;flex-wrap:wrap;gap:8px;margin-top:12px';
@@ -516,6 +524,14 @@ function showUpload(){
       document.body.appendChild(fi);
       uz.onclick = function(){fi.click();};
       fi.onchange = function(){addFiles(fi.files); fi.remove();};
+      // 「写真を撮る」：capture属性でカメラを優先起動（Android Chrome対応）
+      camBtn.onclick = function(){
+        var fc=document.createElement('input');
+        fc.type='file'; fc.accept='image/*'; fc.capture='environment'; fc.style.display='none';
+        document.body.appendChild(fc);
+        fc.onchange=function(){addFiles(fc.files); fc.remove();};
+        fc.click();
+      };
       addBtn.onclick = function(){
         var fi2=document.createElement('input');
         fi2.type='file'; fi2.accept='image/*'; fi2.multiple=true; fi2.style.display='none';
@@ -862,33 +878,14 @@ function showAllForms(person){
     checkWarnB(ri);
   });
 
-  var methodCard = document.createElement('div');
-  methodCard.className = 'card';
-  methodCard.innerHTML =
-    '<div class="ct">精算方法を選択</div>' +
-    '<div class="mwrap">' +
-    '<button class="mbtn" id="bn">今すぐ精算</button>' +
-    '<button class="mbtn" id="bl">後で精算</button>' +
-    '</div>';
-  el.appendChild(methodCard);
-
-  var signCard = document.createElement('div');
-  signCard.id = 'sc';
-  signCard.className = 'card';
-  signCard.style.display = 'none';
-  signCard.innerHTML =
-    '<div class="ct">電子サイン</div>' +
-    '<p style="font-size:12px;color:#6b7280;margin-bottom:10px">指またはマウスで署名してください</p>' +
-    '<canvas id="cvs" height="160" style="border:2px solid #e5e7eb;border-radius:8px;width:100%;touch-action:none;cursor:crosshair;background:#fafafa;display:block"></canvas>' +
-    '<div style="display:flex;gap:8px;margin-top:8px;align-items:center">' +
-    '<button id="clrbtn" style="padding:6px 12px;background:#f3f4f6;border:none;border-radius:8px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600">クリア</button>' +
-    '<span id="sl" style="display:none;font-size:12px;color:#16a34a;font-weight:600">✓ 署名済み</span>' +
-    '</div>';
-  el.appendChild(signCard);
+  // 複数用途の注意書き
+  var noteCard = document.createElement('div');
+  noteCard.style.cssText = 'font-size:12px;color:#6b7280;line-height:1.6;margin:0 4px 14px;padding:10px 12px;background:#f0f9ff;border-radius:8px';
+  noteCard.innerHTML = '💡 1枚のレシートに用途が複数ある場合は、「明細を修正する」から品目ごとに用途（勘定科目）を選んでください。';
+  el.appendChild(noteCard);
 
   var sbwrap = document.createElement('div');
   sbwrap.id = 'sbwrap';
-  sbwrap.style.display = 'none';
   var confirmbtn = document.createElement('button');
   confirmbtn.id = 'confirmbtn';
   confirmbtn.className = 'btn bg';
@@ -898,37 +895,7 @@ function showAllForms(person){
 
   window.scrollTo(0,0);
 
-  var method=null, signed=false, drawing=false;
-
-  $e('bn').onclick = function(){
-    method='now';
-    $e('bn').className='mbtn mn'; $e('bl').className='mbtn';
-    $e('sc').style.display='block'; $e('sbwrap').style.display='block';
-    var cv=$e('cvs'); cv.width=cv.parentElement.offsetWidth-40;
-    signed=false; drawing=false; $e('sl').style.display='none';
-    var ctx=cv.getContext('2d');
-    ctx.clearRect(0,0,cv.width,cv.height);
-    ctx.strokeStyle='#1c1917'; ctx.lineWidth=2.5; ctx.lineCap='round';
-    function xy(e){var r=cv.getBoundingClientRect(),s=e.touches?e.touches[0]:e;return{x:s.clientX-r.left,y:s.clientY-r.top};}
-    cv.onmousedown=cv.ontouchstart=function(e){e.preventDefault();drawing=true;var p=xy(e);ctx.beginPath();ctx.moveTo(p.x,p.y);};
-    cv.onmousemove=cv.ontouchmove=function(e){e.preventDefault();if(!drawing)return;var p=xy(e);ctx.lineTo(p.x,p.y);ctx.stroke();signed=true;$e('sl').style.display='inline';};
-    cv.onmouseup=cv.ontouchend=function(){drawing=false;};
-  };
-
-  $e('bl').onclick = function(){
-    method='later';
-    $e('bn').className='mbtn'; $e('bl').className='mbtn ml';
-    $e('sc').style.display='none'; $e('sbwrap').style.display='block';
-  };
-
-  $e('clrbtn').onclick = function(){
-    var cv=$e('cvs'); cv.getContext('2d').clearRect(0,0,cv.width,cv.height);
-    signed=false; $e('sl').style.display='none';
-  };
-
   confirmbtn.onclick = function(){
-    if(!method){alert('精算方法を選択してください');return;}
-    if(method==='now'&&!signed){alert('電子サインを記入してください');return;}
 
     // 用途の選択チェック（全レシート必須）
     for(var ci=0; ci<RECEIPTS.length; ci++){
@@ -951,27 +918,6 @@ function showAllForms(person){
       if(!confirm('⚠️ 金額の確認をおすすめするレシートがあります。\nこのまま申請してもよろしいですか？\n（事務所でも確認します）')) return;
     }
 
-    // 精算日ベースで月またぎチェック（精算日が今月以外なら警告）
-    var now = new Date();
-    var currentMonth = now.getFullYear()+'-'+('0'+(now.getMonth()+1)).slice(-2);
-    var existingMonths = {};
-    APPS.forEach(function(a){
-      var m = (a.settlement_date||'').slice(0,7);
-      if(m) existingMonths[m] = (existingMonths[m]||0)+1;
-    });
-    var dominantMonth = currentMonth;
-    var maxC = 0;
-    Object.keys(existingMonths).forEach(function(m){
-      if(existingMonths[m]>maxC){maxC=existingMonths[m];dominantMonth=m;}
-    });
-    if(method==='now' && dominantMonth && dominantMonth !== currentMonth){
-      var dp = dominantMonth.split('-');
-      var cp = currentMonth.split('-');
-      if(!confirm(dp[0]+'年'+parseInt(dp[1],10)+'月の申請が既にあります。\n今日（'+cp[0]+'年'+parseInt(cp[1],10)+'月）に精算すると月をまたぎます。\n先に締め処理を行ってください。\n\nこのまま申請しますか？')){return;}
-    }
-
-    var signData=null;
-    if(method==='now'){try{signData=$e('cvs').toDataURL();}catch(e){}}
     var receiptsSnap = RECEIPTS.map(function(r,ri){
       var d=r.data||{};
       // 用途（申請者が選択）。__otherなら自由入力値
@@ -994,8 +940,17 @@ function showAllForms(person){
       });
       var itemsSum=items.reduce(function(s,it){return s+(Number(it.amount)||0);},0);
       var taxAmt=(Number(d.tax_8)||0)+(Number(d.tax_10)||0);
-      // レシート記載合計があればそれを優先、なければ品目合計＋税額
-      var rTotal=(d.total!=null)?Number(d.total):(itemsSum+taxAmt);
+      // 元の解析時の品目合計
+      var origSum=(d.items||[]).reduce(function(s,it){return s+(Number(it.amount)||0);},0);
+      // 品目が修正されたか（合計が変わったか）で判定
+      var edited = (itemsSum !== origSum);
+      // 修正されていれば「修正後の品目合計＋税額」、未修正なら記載合計（あれば）を尊重
+      var rTotal;
+      if(edited){
+        rTotal = itemsSum + taxAmt;
+      } else {
+        rTotal = (d.total!=null) ? Number(d.total) : (itemsSum + taxAmt);
+      }
       return {
         store:store, date:date, invoice:inv,
         use:useVal,
@@ -1006,14 +961,15 @@ function showAllForms(person){
       };
     });
     var fixedGrandTotal = receiptsSnap.reduce(function(s,rc){return s+(rc.total||0);},0);
+    // 申請は常に「未精算」で保存。精算（受領サイン）は完了画面や管理画面で行う
     showConfirm({
       person:person,
       receipts:receiptsSnap,
       grandTotal:fixedGrandTotal,
-      method:method,
-      status:method==='now'?'paid':'unsigned',
-      sign:signData,
-      settlement_date:method==='now'?today():null
+      method:'later',
+      status:'unsigned',
+      sign:null,
+      settlement_date:null
     });
   };
 }
@@ -1064,7 +1020,6 @@ function showConfirm(snap){
   confCard.innerHTML=
     '<div class="ct">申請内容の確認</div>'+
     '<div class="crow"><span style="color:#6b7280">申請者</span><span style="font-weight:600">'+snap.person+'</span></div>'+
-    '<div class="crow"><span style="color:#6b7280">精算方法</span><span style="font-weight:600">'+(snap.method==='now'?'今すぐ精算':'後で精算')+'</span></div>'+
     '<div class="crow"><span style="color:#6b7280">レシート枚数</span><span style="font-weight:600">'+snap.receipts.length+'枚</span></div>'+
     '<hr/>'+rows+
     (snap.receipts.length>1?
@@ -1152,6 +1107,11 @@ function showDone(app){
     '<div class="tr"><span style="color:#6b7280">合計</span><b style="color:#dc2626;font-size:17px">¥'+fmt(app.total)+'</b></div>'+
     '</div>'+
     '<p style="font-size:12px;color:#9ca3af;text-align:center;margin:16px 0">レシート束の先頭に申請IDを手書きで記載してください</p>'+
+    '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:16px;margin-bottom:14px;text-align:center">'+
+    '<div style="font-size:14px;font-weight:700;color:#1d4ed8;margin-bottom:6px">この場で現金を受け取る場合</div>'+
+    '<div style="font-size:12px;color:#6b7280;margin-bottom:12px">サインをして精算を完了できます（あとで精算する場合は不要です）</div>'+
+    '<button class="btn bg" id="settlebtn" style="margin-top:0;background:#2563eb">✍️ 続けて精算する（受領サイン）</button>'+
+    '</div>'+
     '<div class="next">'+
     '<div style="font-size:15px;font-weight:700;color:#16a34a;margin-bottom:6px">続けて申請できます</div>'+
     '<div style="font-size:13px;color:#6b7280;margin-bottom:16px">新しいレシートがあればこちらから</div>'+
@@ -1159,6 +1119,49 @@ function showDone(app){
     '</div>';
   window.scrollTo(0,0);
   $e('newbtn').onclick=function(){showUpload();};
+  $e('settlebtn').onclick=function(){settleNow(app);};
+}
+
+// 完了画面から「その場で精算（受領サイン）」する
+function settleNow(app){
+  var el=$e('area');
+  el.innerHTML=
+    '<div style="text-align:center;padding:20px 0 12px">'+
+    '<div style="font-size:20px;font-weight:700;margin-bottom:6px">受領サイン</div>'+
+    '<div style="font-size:13px;color:#6b7280">¥'+fmt(app.total)+' を受け取ったサインをしてください</div></div>'+
+    '<div class="card">'+
+    '<canvas id="dcvs" height="180" style="border:2px solid #e5e7eb;border-radius:8px;width:100%;touch-action:none;cursor:crosshair;background:#fafafa;display:block"></canvas>'+
+    '<div style="display:flex;gap:8px;margin-top:8px;align-items:center">'+
+    '<button id="dclr" style="padding:6px 12px;background:#f3f4f6;border:none;border-radius:8px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600">クリア</button>'+
+    '<span id="dsl" style="display:none;font-size:12px;color:#16a34a;font-weight:600">✓ 署名済み</span>'+
+    '</div></div>'+
+    '<button class="btn bg" id="dsettle" style="background:#2563eb">この内容で精算する</button>'+
+    '<button class="btn bw" id="dback">← 戻る</button>';
+  window.scrollTo(0,0);
+
+  var cv=$e('dcvs'); cv.width=cv.parentElement.offsetWidth-40;
+  var ctx=cv.getContext('2d');
+  ctx.strokeStyle='#1c1917'; ctx.lineWidth=2.5; ctx.lineCap='round';
+  var dsigned=false, ddraw=false;
+  function xy(e){var r=cv.getBoundingClientRect(),s=e.touches?e.touches[0]:e;return{x:s.clientX-r.left,y:s.clientY-r.top};}
+  cv.onmousedown=cv.ontouchstart=function(e){e.preventDefault();ddraw=true;var p=xy(e);ctx.beginPath();ctx.moveTo(p.x,p.y);};
+  cv.onmousemove=cv.ontouchmove=function(e){e.preventDefault();if(!ddraw)return;var p=xy(e);ctx.lineTo(p.x,p.y);ctx.stroke();dsigned=true;$e('dsl').style.display='inline';};
+  cv.onmouseup=cv.ontouchend=function(){ddraw=false;};
+  $e('dclr').onclick=function(){ctx.clearRect(0,0,cv.width,cv.height);dsigned=false;$e('dsl').style.display='none';};
+  $e('dback').onclick=function(){showDone(app);};
+  $e('dsettle').onclick=function(){
+    if(!dsigned){alert('サインを記入してください');return;}
+    var sig=cv.toDataURL();
+    var sd=today();
+    // ローカル更新
+    app.status='paid'; app.settlement_date=sd; app.client_sign=sig; app.client_signed_at=new Date().toISOString(); app.paid_at=new Date().toISOString();
+    var idx=APPS.findIndex(function(x){return x.id===app.id;});
+    if(idx>=0){APPS[idx]=app;} sv();
+    // サーバー更新（精算＝client_sign＋settlement_date）
+    updateSheet(app.id, {status:'paid', settlement_date:sd, client_sign:sig, client_signed_at:app.client_signed_at, paid_at:app.paid_at});
+    alert('精算が完了しました');
+    showDone(app);
+  };
 }
 
 function rA(){
