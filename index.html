@@ -639,6 +639,52 @@ function removeReceiptB(ri){
   if(RECEIPTS.length===0){ showUpload(); return; }
   showAllForms(CURRENT_PERSON);
 }
+// 手入力レシートを追加（読み取り失敗の補い用。合計金額だけ）
+function addManualReceipt(){
+  // 入力中の用途を保持してから再描画
+  syncUseSelections();
+  RECEIPTS.push({ manual:true, mstore:'', mdate:today(), mtotal:0, minv:'', _use:'', data:{items:[]} });
+  showAllForms(CURRENT_PERSON);
+  setTimeout(function(){ window.scrollTo(0, document.body.scrollHeight); }, 60);
+}
+// 各レシートで選択中の用途を、再描画前にRECEIPTSへ退避
+function syncUseSelections(){
+  RECEIPTS.forEach(function(r,ri){
+    var u=$e('r'+ri+'use'); if(u) r._use=u.value;
+    if(r.manual){
+      var st=$e('r'+ri+'mstore'); if(st) r.mstore=st.value;
+      var dt=$e('r'+ri+'mdate'); if(dt) r.mdate=dt.value;
+      var iv=$e('r'+ri+'minv'); if(iv) r.minv=iv.value;
+    }
+  });
+}
+// 手入力レシートに写真を添付（分析せず保存用に保持）
+function attachManualPhoto(ri){
+  syncUseSelections();
+  var fi=document.createElement('input');
+  fi.type='file'; fi.accept='image/*'; fi.style.display='none';
+  document.body.appendChild(fi);
+  fi.onchange=function(){
+    var f=fi.files[0]; fi.remove();
+    if(!f || !f.type.startsWith('image/')) return;
+    var rd=new FileReader();
+    rd.onload=function(e){
+      compressImage(e.target.result, f.type, 1200, 0.70, function(compressed, mime){
+        RECEIPTS[ri].b64=compressed.split(',')[1];
+        RECEIPTS[ri].mime=mime;
+        RECEIPTS[ri].preview=compressed;
+        showAllForms(CURRENT_PERSON);
+      });
+    };
+    rd.readAsDataURL(f);
+  };
+  fi.click();
+}
+function clearManualPhoto(ri){
+  syncUseSelections();
+  RECEIPTS[ri].b64=null; RECEIPTS[ri].mime=null; RECEIPTS[ri].preview=null;
+  showAllForms(CURRENT_PERSON);
+}
 // 明細修正で金額を変えたら、合計表示と警告を更新
 function recalcTotB(ri){
   var itemsSum=0, i=0;
@@ -794,6 +840,35 @@ function showAllForms(person){
       return;
     }
 
+    // 手入力レシート（読み取れなかったとき用。合計金額だけ入れる）
+    if(r.manual){
+      var acOptM = ACS.map(function(a){return '<option value="'+a+'"'+(a===r._use?' selected':'')+'>'+a+'</option>';}).join('');
+      card.innerHTML =
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'+
+          '<span style="background:#7c3aed;color:#fff;border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700">\u270d\ufe0f 手入力 '+(ri+1)+'</span>'+
+          '<button onclick="removeReceiptB('+ri+')" style="background:none;border:none;color:#dc2626;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;padding:4px 0">\u{1f5d1} 削除</button>'+
+        '</div>'+
+        '<label style="display:block;font-size:12px;font-weight:600;color:#6b7280;margin:8px 0 4px">支払先</label>'+
+        '<input type="text" id="r'+ri+'mstore" value="'+(r.mstore||'').replace(/"/g,'&quot;')+'" placeholder="店名・支払先" style="width:100%;padding:10px;font-size:16px;border:1px solid #e5e7eb;border-radius:8px;font-family:inherit"/>'+
+        '<label style="display:block;font-size:12px;font-weight:600;color:#6b7280;margin:10px 0 4px">取引日</label>'+
+        '<input type="text" id="r'+ri+'mdate" value="'+(r.mdate||today())+'" placeholder="YYYY-MM-DD" style="width:100%;padding:10px;font-size:16px;border:1px solid #e5e7eb;border-radius:8px;font-family:inherit"/>'+
+        '<label style="display:block;font-size:12px;font-weight:600;color:#6b7280;margin:10px 0 4px">合計金額（税込）</label>'+
+        '<input type="number" id="r'+ri+'mtotal" value="'+(r.mtotal||'')+'" placeholder="例：1500" oninput="RECEIPTS['+ri+'].mtotal=Number(this.value)||0" style="width:100%;padding:10px;font-size:16px;border:1px solid #e5e7eb;border-radius:8px;font-family:inherit"/>'+
+        '<label style="display:block;font-size:12px;font-weight:600;color:#6b7280;margin:10px 0 4px">インボイス番号（任意）</label>'+
+        '<input type="text" id="r'+ri+'minv" value="'+(r.minv||'').replace(/"/g,'&quot;')+'" placeholder="T+13桁（なければ空欄）" style="width:100%;padding:10px;font-size:16px;border:1px solid #e5e7eb;border-radius:8px;font-family:inherit"/>'+
+        '<label style="display:block;font-size:12px;font-weight:600;color:#6b7280;margin:10px 0 4px">用途を選んでください</label>'+
+        '<select id="r'+ri+'use" onchange="setUseB('+ri+',this.value)" style="width:100%;padding:11px;font-size:16px;border:1px solid #e5e7eb;border-radius:8px;font-family:inherit"><option value="">\u25bc 選択してください</option>'+acOptM+'<option value="__other">その他（自由入力）</option></select>'+
+        '<div id="r'+ri+'otherwrap" style="display:none"><input id="r'+ri+'other" placeholder="用途を入力" style="margin-top:8px;font-size:16px;width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:8px;font-family:inherit"/></div>'+
+        '<label style="display:block;font-size:12px;font-weight:600;color:#6b7280;margin:12px 0 4px">レシート写真（任意・保存用）</label>'+
+        '<div id="r'+ri+'mphotowrap">'+
+          (r.b64
+            ? '<div style="display:flex;align-items:center;gap:10px"><img src="'+r.preview+'" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb"/><button onclick="clearManualPhoto('+ri+')" style="background:none;border:none;color:#dc2626;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">写真を削除</button></div>'
+            : '<button onclick="attachManualPhoto('+ri+')" style="width:100%;padding:11px;border:2px dashed #cbd5e1;border-radius:8px;background:#fff;color:#475569;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">\u{1f4f7} 写真を撮る・選ぶ（分析はしません）</button>')+
+        '</div>';
+      el.appendChild(card);
+      return;
+    }
+
     var items = d.items || [];
     var sumItems = items.reduce(function(s,it){return s+(Number(it.amount)||0);},0);
     // 消費税（外税）。tax_8/tax_10があれば合算
@@ -879,6 +954,13 @@ function showAllForms(person){
     checkWarnB(ri);
   });
 
+  // 読み取れなかったとき用：手入力でレシートを追加
+  var addManualBtn = document.createElement('button');
+  addManualBtn.style.cssText = 'display:block;width:100%;padding:13px;border:2px dashed #94a3b8;border-radius:10px;background:#fff;color:#475569;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:14px';
+  addManualBtn.textContent = '＋ 手入力でレシートを追加';
+  addManualBtn.onclick = function(){ addManualReceipt(); };
+  el.appendChild(addManualBtn);
+
   var sbwrap = document.createElement('div');
   sbwrap.id = 'sbwrap';
   var confirmbtn = document.createElement('button');
@@ -892,8 +974,14 @@ function showAllForms(person){
 
   confirmbtn.onclick = function(){
 
-    // 用途の選択チェック（全レシート必須）
+    // 用途の選択チェック（全レシート必須）。手入力は支払先・合計も必須
     for(var ci=0; ci<RECEIPTS.length; ci++){
+      if(RECEIPTS[ci].manual){
+        var msEl=$e('r'+ci+'mstore');
+        if(!msEl || !msEl.value.trim()){ alert('手入力'+(ci+1)+'の支払先を入力してください'); return; }
+        var mtEl=$e('r'+ci+'mtotal');
+        if(!mtEl || !(Number(mtEl.value)>0)){ alert('手入力'+(ci+1)+'の合計金額を入力してください'); return; }
+      }
       var useEl=$e('r'+ci+'use');
       var useVal=useEl?useEl.value:'';
       if(!useVal){ alert('レシート'+(ci+1)+'の用途を選んでください'); return; }
@@ -919,6 +1007,24 @@ function showAllForms(person){
       var useEl=$e('r'+ri+'use');
       var useVal=useEl?useEl.value:'';
       if(useVal==='__other'){ var oEl=$e('r'+ri+'other'); useVal=oEl?oEl.value.trim():'その他'; }
+
+      // 手入力レシート：合計金額だけ。品目は1行（用途名＝勘定科目）で持つ
+      if(r.manual){
+        var mstore=($e('r'+ri+'mstore')||{}).value||'';
+        var mdate=($e('r'+ri+'mdate')||{}).value||today();
+        var minv=($e('r'+ri+'minv')||{}).value||'';
+        var mtotal=Number(($e('r'+ri+'mtotal')||{}).value)||0;
+        return {
+          store:mstore, date:mdate, invoice:minv,
+          use:useVal,
+          items:[{name:'(手入力)', amount:mtotal, tax_category:'10%標準', account:useVal}],
+          tax_8:null, tax_10:null,
+          total:mtotal,
+          b64:r.b64||null, mime:r.mime||null,
+          manual:true
+        };
+      }
+
       // 店名・日付・インボイス：明細を開いて編集していれば編集欄、なければ非表示の保持値
       function val(id){ var e=$e('r'+ri+id); var h=$e('r'+ri+id+'_h'); return (e&&e.value!=='')?e.value:(h?h.value:''); }
       var store=val('store'), date=val('date'), inv=val('inv');
