@@ -446,7 +446,7 @@ function loadFromSheet(cb) {
   .then(function(d){if(d.ok) cb(d); else cb(null);})
   .catch(function(e){console.log('Sheet load error:', e); cb(null);});
 }
-var ACS = ['駐車料','タクシー代','運転代行','高速料金','ガソリン代','自賠責保険','ドリンク代','残業食事代','草刈食事代','弁当代','テキスト代','くすり','試験代','飲食代','打ち合せ','贈答品代','手土産代','ゴルフ','香典','消耗品','作業着','業務用備品','器具備品','日本青年会議所','印紙代','検査登録印紙・審査証紙','手数料','浄化槽清掃代','種苗・植木・肥料代','電話代','物置電気代','定期購読新聞代','荷造運賃','その他'];
+var ACS = ['駐車料','タクシー代','運転代行','高速料金','ガソリン代','自賠責保険代','ドリンク代','残業食事代','草刈食事代','弁当代','テキスト代','くすり','試験代','飲食代','打ち合せ','贈答品代','手土産代','ゴルフ','香典','消耗品','作業着','業務用備品','器具備品','日本青年会議所','印紙代','検査登録印紙・審査証紙','手数料','浄化槽清掃代','種苗・植木・肥料代','電話代','物置電気代','定期購読新聞代','荷造運賃','その他'];
   
 var AM = {
   '駐車場':'駐車代','パーキング':'駐車代',
@@ -984,12 +984,15 @@ function applyDetailB(ri){
   var stEl = document.getElementById('r'+ri+'store');
   var dtEl = document.getElementById('r'+ri+'date');
   var ivEl = document.getElementById('r'+ri+'inv');
+  var carEl= document.getElementById('r'+ri+'car');
   var stH  = document.getElementById('r'+ri+'store_h');
   var dtH  = document.getElementById('r'+ri+'date_h');
   var ivH  = document.getElementById('r'+ri+'inv_h');
+  var carH = document.getElementById('r'+ri+'car_h');
   if(stEl && stH) stH.value = stEl.value;
   if(dtEl && dtH) dtH.value = dtEl.value;
   if(ivEl && ivH) ivH.value = ivEl.value;
+  if(carEl && carH) carH.value = carEl.value;
 
   // ── 上のサマリー（グレーのitemsListエリア）を書き換え ──
   var summaryEl = document.getElementById('r'+ri+'summary');
@@ -1296,6 +1299,7 @@ function showAllForms(person){
           '<div style="font-size:13px;color:#374151;line-height:1.9;margin-top:8px">'+
           '<div><span style="color:#9ca3af;display:inline-block;width:56px">\u53d6\u5f15\u65e5</span>'+(d.date||today())+'</div>'+
           '<div><span style="color:#9ca3af;display:inline-block;width:56px">\u652f\u6255\u5148</span>'+(d.store_name||'(\u4e0d\u660e)')+'</div>'+
+          (d.car_number?'<div><span style="color:#9ca3af;display:inline-block;width:56px">車番</span><b style="color:#1c1917">'+d.car_number+'</b></div>':'')+
           '</div></div>'+
         '<div style="text-align:right"><div id="r'+ri+'tot" data-original="'+statedTotal+'" data-tax="'+taxAmt+'" data-taxtype="'+(isTaxExcl?'exclusive':'inclusive')+'" style="font-size:26px;font-weight:700;color:#dc2626;line-height:1.1">\u00a5'+fmt(displayTotal)+'</div><div id="r'+ri+'totlabel" style="font-size:11px;color:#9ca3af">\u5408\u8a08'+taxLabel+'</div></div>'+
       '</div>'+
@@ -1321,7 +1325,8 @@ function showAllForms(person){
       '<div id="r'+ri+'detail" style="display:none;margin-top:12px;padding-top:12px;border-top:1px dashed #e5e7eb">'+
         '<input type="text" id="r'+ri+'store" value="'+(d.store_name||'').replace(/"/g,'&quot;')+'" placeholder="\u652f\u6255\u5148" style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;margin-bottom:6px"/>'+
         '<input type="text" id="r'+ri+'date" value="'+(d.date||today())+'" placeholder="\u53d6\u5f15\u65e5 YYYY-MM-DD" style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;margin-bottom:6px"/>'+
-        '<input type="text" id="r'+ri+'inv" value="'+(d.invoice_number||'').replace(/"/g,'&quot;')+'" placeholder="\u30a4\u30f3\u30dc\u30a4\u30b9\u756a\u53f7 T..." style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;margin-bottom:10px"/>'+
+        '<input type="text" id="r'+ri+'inv" value="'+(d.invoice_number||'').replace(/"/g,'&quot;')+'" placeholder="\u30a4\u30f3\u30dc\u30a4\u30b9\u756a\u53f7 T..." style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;margin-bottom:6px"/>'+
+        '<input type="text" id="r'+ri+'car" value="'+(d.car_number||'').replace(/"/g,'&quot;')+'" placeholder="\u8eca\u756a\uff08\u81ea\u52d5\u8eca\u4fdd\u967a\u7b49\u306e\u5834\u5408\uff09" style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;margin-bottom:10px"/>'+
         '<div style="font-size:12px;color:#9ca3af;margin-bottom:6px">\u660e\u7d30</div>'+editRows+
         '<button onclick="applyDetailB('+ri+')" style="display:block;width:100%;margin-top:10px;padding:11px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">\u2713 \u4fee\u6b63\u3092\u53cd\u6620\u3059\u308b</button>'+
       '</div>'+
@@ -1330,6 +1335,7 @@ function showAllForms(person){
         '<input type="hidden" id="r'+ri+'store_h" value="'+(d.store_name||'').replace(/"/g,'&quot;')+'"/>'+
         '<input type="hidden" id="r'+ri+'date_h" value="'+(d.date||today())+'"/>'+
         '<input type="hidden" id="r'+ri+'inv_h" value="'+(d.invoice_number||'').replace(/"/g,'&quot;')+'"/>'+
+        '<input type="hidden" id="r'+ri+'car_h" value="'+(d.car_number||'').replace(/"/g,'&quot;')+'"/>'+
       '</div>';
 
     el.appendChild(card);
@@ -1411,7 +1417,7 @@ function showAllForms(person){
 
       // 店名・日付・インボイス：明細を開いて編集していれば編集欄、なければ非表示の保持値
       function val(id){ var e=$e('r'+ri+id); var h=$e('r'+ri+id+'_h'); return (e&&e.value!=='')?e.value:(h?h.value:''); }
-      var store=val('store'), date=val('date'), inv=val('inv');
+      var store=val('store'), date=val('date'), inv=val('inv'), car=val('car');
       // 明細：編集欄があれば反映、なければ解析値。勘定科目は明細欄優先、なければ用途を適用
       var items=(d.items||[]).map(function(it,i){
         var nmEl=$e('r'+ri+'nm'+i), amEl=$e('r'+ri+'am'+i), txEl=$e('r'+ri+'tx'+i), acEl=$e('r'+ri+'ac'+i);
@@ -1444,7 +1450,7 @@ function showAllForms(person){
         use:useVal,
         items:items,
         tax_8:d.tax_8, tax_10:d.tax_10,
-        car_number:d.car_number||null,
+        car_number: car || d.car_number || null,
         total:rTotal,
         b64:r.b64, mime:r.mime
       };
@@ -1496,6 +1502,7 @@ function showConfirm(snap){
       '<div class="rbadge">レシート '+(ri+1)+'</div>'+
       '<div class="crow"><span style="color:#6b7280">用途</span><span style="font-weight:700;color:#2563eb">'+(r.use||'—')+'</span></div>'+
       '<div class="crow"><span style="color:#6b7280">支払先</span><span style="font-weight:600">'+(r.store||'—')+'</span></div>'+
+      (r.car_number?'<div class="crow"><span style="color:#6b7280">車番</span><span style="font-weight:600">'+r.car_number+'</span></div>':'')+
       '<div class="crow"><span style="color:#6b7280">日付</span><span style="font-weight:600">'+(r.date||'—')+'</span></div>'+
       itemRows+
       '<div style="border-top:1px solid #e5e7eb;margin-top:6px;padding-top:6px">'+
