@@ -723,14 +723,26 @@ function showUpload(){
   };
 }
 
-function compressImage(dataUrl, mime, maxW, quality, cb){
+function compressImage(dataUrl, mime, maxW, quality, cb, rotation){
+  rotation = rotation || 0;
   var img = new Image();
   img.onload = function(){
     var w = img.width, h = img.height;
-    if(w > maxW){ h = Math.round(h * maxW / w); w = maxW; }
+    var isRotated = (rotation === 90 || rotation === 270);
+    // 回転後の実寸（90/270度なら幅と高さが入れ替わる）
+    var rw = isRotated ? h : w;
+    var rh = isRotated ? w : h;
+    if(rw > maxW){ rh = Math.round(rh * maxW / rw); rw = maxW; }
     var cv = document.createElement('canvas');
-    cv.width = w; cv.height = h;
-    cv.getContext('2d').drawImage(img, 0, 0, w, h);
+    cv.width = rw; cv.height = rh;
+    var ctx = cv.getContext('2d');
+    ctx.save();
+    ctx.translate(rw / 2, rh / 2);
+    ctx.rotate(rotation * Math.PI / 180);
+    // 回転後に元画像の縮尺を合わせる
+    var scale = rw / (isRotated ? h : w);
+    ctx.drawImage(img, -w * scale / 2, -h * scale / 2, w * scale, h * scale);
+    ctx.restore();
     var out = cv.toDataURL('image/jpeg', quality);
     cb(out, 'image/jpeg');
   };
@@ -745,9 +757,9 @@ function addFiles(files){
       var original = e.target.result;
       // 最大幅1200px・品質0.7で圧縮（容量を約1/5〜1/10に削減）
       compressImage(original, f.type, 1200, 0.70, function(compressed, mime){
-        RECEIPTS.push({b64:compressed.split(',')[1], mime:mime, preview:compressed, data:null});
+        RECEIPTS.push({b64:compressed.split(',')[1], mime:mime, preview:compressed, _original:original, _origMime:f.type, _rotation:0, data:null});
         renderThumbs();
-      });
+      }, 0);
     };
     r.readAsDataURL(f);
   });
@@ -760,6 +772,7 @@ function renderThumbs(){
     return '<div style="position:relative">' +
       '<img src="'+r.preview+'" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:2px solid '+(r.data?'#16a34a':'#d1d5db')+'"/>' +
       (r.data ? '<div style="position:absolute;bottom:2px;left:0;right:0;text-align:center;background:#16a34a;color:#fff;font-size:9px;border-radius:0 0 6px 6px;padding:1px">解析済</div>' : '') +
+      '<button onclick="rotateR('+i+')" style="position:absolute;bottom:2px;left:2px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;border:none;cursor:pointer;font-size:11px;line-height:20px;padding:0" title="90°回転">↻</button>' +
       '<button onclick="removeR('+i+')" style="position:absolute;top:-5px;right:-5px;width:18px;height:18px;border-radius:50%;background:#dc2626;color:#fff;border:none;cursor:pointer;font-size:10px;line-height:18px;padding:0">✕</button>' +
       '</div>';
   }).join('');
@@ -768,6 +781,22 @@ function renderThumbs(){
 }
 
 function removeR(i){ RECEIPTS.splice(i,1); renderThumbs(); }
+
+// 【3】サムネイルの回転ボタン：原本から回転角度を変えて再圧縮
+function rotateR(i){
+  var r = RECEIPTS[i];
+  if(!r) return;
+  r._rotation = ((r._rotation || 0) + 90) % 360;
+  var src = r._original || r.preview;
+  var mime = r._origMime || 'image/jpeg';
+  compressImage(src, mime, 1200, 0.70, function(compressed, outMime){
+    r.b64 = compressed.split(',')[1];
+    r.mime = outMime;
+    r.preview = compressed;
+    r.data = null; // 回転したら解析結果をリセット
+    renderThumbs();
+  }, r._rotation);
+}
 
 function removeFormR(i){
   RECEIPTS.splice(i,1);
@@ -994,6 +1023,14 @@ function applyDetailB(ri){
   if(ivEl && ivH) ivH.value = ivEl.value;
   if(carEl && carH) carH.value = carEl.value;
 
+  // 【7】消費税額の手動修正値をRECEIPTS[ri].dataに反映
+  var t8El  = document.getElementById('r'+ri+'tax8edit');
+  var t10El = document.getElementById('r'+ri+'tax10edit');
+  if(RECEIPTS[ri] && RECEIPTS[ri].data){
+    if(t8El  && t8El.value  !== '') RECEIPTS[ri].data.tax_8  = Number(t8El.value)  || 0;
+    if(t10El && t10El.value !== '') RECEIPTS[ri].data.tax_10 = Number(t10El.value) || 0;
+  }
+
   // カード上部の表示テキストを書き換え
   var hstore = document.getElementById('r'+ri+'hstore');
   var hdate  = document.getElementById('r'+ri+'hdate');
@@ -1011,6 +1048,7 @@ function applyDetailB(ri){
   if(summaryEl){
     var r2 = RECEIPTS[ri];
     var d2 = r2 ? (r2.data || {}) : {};
+    // 【7】修正後の消費税額でサマリーを更新
     var taxAmt2 = (Number(d2.tax_8)||0) + (Number(d2.tax_10)||0);
     // 現在の編集欄から品目を再収集
     var newItems = [];
@@ -1077,6 +1115,37 @@ function applyDetailB(ri){
     setTimeout(function(){ btn.textContent = origText; btn.style.background = origBg; }, 1200);
   }
 }
+
+// 【7】消費税額の自動計算（品目の税区分・金額から内税方式で計算してinputに反映）
+function calcTaxAuto(ri, rate){
+  var r = RECEIPTS[ri];
+  if(!r) return;
+  var items = [];
+  var i = 0;
+  while(true){
+    var amEl = document.getElementById('r'+ri+'am'+i);
+    var txEl = document.getElementById('r'+ri+'tx'+i);
+    if(!amEl) break;
+    if(amEl.getAttribute('data-removed') !== '1'){
+      items.push({ amount: parseInt(amEl.value,10)||0, tax_category: txEl ? txEl.value : '10%標準' });
+    }
+    i++;
+  }
+  if(rate === 8){
+    var sum8 = items.filter(function(it){ return it.tax_category === '8%軽減'; })
+                    .reduce(function(s,it){ return s + it.amount; }, 0);
+    var tax8 = Math.floor(sum8 * 8 / 108);
+    var el8 = document.getElementById('r'+ri+'tax8edit');
+    if(el8){ el8.value = tax8; el8.style.borderColor = '#16a34a'; setTimeout(function(){ el8.style.borderColor=''; }, 1500); }
+  } else {
+    var sum10 = items.filter(function(it){ return it.tax_category === '10%標準'; })
+                     .reduce(function(s,it){ return s + it.amount; }, 0);
+    var tax10 = Math.floor(sum10 * 10 / 110);
+    var el10 = document.getElementById('r'+ri+'tax10edit');
+    if(el10){ el10.value = tax10; el10.style.borderColor = '#16a34a'; setTimeout(function(){ el10.style.borderColor=''; }, 1500); }
+  }
+}
+
 // 警告チェック（内税・外税どちらでも誤検知しない）
 // 品目合計（内税想定）か、品目合計＋税額（外税想定）のどちらかがレシート記載合計に一致すればOK
 function checkWarnB(ri){
@@ -1357,6 +1426,20 @@ function showAllForms(person){
         '<input type="text" id="r'+ri+'date" value="'+(d.date||today())+'" placeholder="\u53d6\u5f15\u65e5 YYYY-MM-DD" style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;margin-bottom:6px"/>'+
         '<input type="text" id="r'+ri+'inv" value="'+(d.invoice_number||'').replace(/"/g,'&quot;')+'" placeholder="\u30a4\u30f3\u30dc\u30a4\u30b9\u756a\u53f7 T..." style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;margin-bottom:6px"/>'+
         '<input type="text" id="r'+ri+'car" value="'+(d.car_number||'').replace(/"/g,'&quot;')+'" placeholder="\u8eca\u756a\uff08\u81ea\u52d5\u8eca\u4fdd\u967a\u7b49\u306e\u5834\u5408\uff09" style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;margin-bottom:10px"/>'+
+        // 【7】消費税額の手動修正欄
+        '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 12px;margin-bottom:10px">'+
+          '<div style="font-size:12px;font-weight:700;color:#b45309;margin-bottom:8px">🧾 消費税額の修正（AIが誤読した場合のみ）</div>'+
+          '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">'+
+            '<label style="font-size:12px;color:#6b7280;margin:0;width:90px;flex-shrink:0">8%消費税額</label>'+
+            '<input type="number" id="r'+ri+'tax8edit" value="'+(d.tax_8!=null?d.tax_8:'')+'" placeholder="例：85" min="0" style="flex:1;padding:7px;font-size:15px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit"/>'+
+            '<button type="button" onclick="calcTaxAuto('+ri+',8)" style="padding:6px 8px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">自動計算</button>'+
+          '</div>'+
+          '<div style="display:flex;gap:8px;align-items:center">'+
+            '<label style="font-size:12px;color:#6b7280;margin:0;width:90px;flex-shrink:0">10%消費税額</label>'+
+            '<input type="number" id="r'+ri+'tax10edit" value="'+(d.tax_10!=null?d.tax_10:'')+'" placeholder="例：132" min="0" style="flex:1;padding:7px;font-size:15px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit"/>'+
+            '<button type="button" onclick="calcTaxAuto('+ri+',10)" style="padding:6px 8px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">自動計算</button>'+
+          '</div>'+
+        '</div>'+
         '<div style="font-size:12px;color:#9ca3af;margin-bottom:6px">\u660e\u7d30</div>'+editRows+
         '<button onclick="applyDetailB('+ri+')" style="display:block;width:100%;margin-top:10px;padding:11px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">\u2713 \u4fee\u6b63\u3092\u53cd\u6620\u3059\u308b</button>'+
       '</div>'+
@@ -1593,7 +1676,24 @@ function showConfirm(snap){
     showDone(app);
   };
 
-  bkbtn.onclick=function(){CURRENT_PERSON=snap.person;showAllForms(snap.person);};
+  bkbtn.onclick=function(){
+    // 【8】確認画面で確定した内容をRECEIPTSに書き戻し、再描画時に入力が保持されるようにする
+    snap.receipts.forEach(function(rc, ri){
+      if(!RECEIPTS[ri]) return;
+      RECEIPTS[ri]._use = rc.use;
+      if(RECEIPTS[ri].data){
+        if(rc.store)      RECEIPTS[ri].data.store_name     = rc.store;
+        if(rc.date)       RECEIPTS[ri].data.date            = rc.date;
+        if(rc.invoice !== undefined) RECEIPTS[ri].data.invoice_number = rc.invoice || '';
+        if(rc.car_number !== undefined) RECEIPTS[ri].data.car_number  = rc.car_number || '';
+        // 【7】消費税の手動修正値も保持
+        if(rc.tax_8  !== undefined) RECEIPTS[ri].data.tax_8  = rc.tax_8;
+        if(rc.tax_10 !== undefined) RECEIPTS[ri].data.tax_10 = rc.tax_10;
+      }
+    });
+    CURRENT_PERSON=snap.person;
+    showAllForms(snap.person);
+  };
 }
 
 // 申請成功後、写真を1枚ずつ裏でDriveに送る（申請自体は軽いまま）
@@ -2648,6 +2748,7 @@ function openReceiptTray(){
     '.no-print button{padding:10px 28px;background:#1c1917;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin:0 6px}'+
     '.no-print .sub{font-size:12px;color:#6b7280;margin-top:8px}'+
     '.tray-page{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:0;width:210mm;height:297mm;padding:8mm;page-break-after:always;page-break-inside:avoid;overflow:hidden}'+
+    '.tray-page:last-child{page-break-after:avoid}'+
     '.tray-cell{border:2px dashed #374151;border-radius:4px;margin:4mm;display:flex;flex-direction:column;min-height:0;page-break-inside:avoid;overflow:hidden}'+
     '.tray-cell.tray-empty{border-color:#e5e7eb}'+
     '.tray-header{background:#1c1917;color:#fff;padding:6px 10px}'+
@@ -2663,6 +2764,7 @@ function openReceiptTray(){
     '@media print{'+
     '.no-print{display:none!important}'+
     '.tray-page{page-break-after:always;border:none}'+
+    '.tray-page:last-child{page-break-after:avoid}'+
     'body{-webkit-print-color-adjust:exact;print-color-adjust:exact}'+
     '}'+
     '</style></head><body>'+
