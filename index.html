@@ -1171,6 +1171,7 @@ function showAllForms(person){
       var tx = ['10%\u6a19\u6e96','8%\u8efd\u6e1b','\u975e\u8ab2\u7a0e','\u4e0d\u8ab2\u7a0e'].map(function(t){return '<option'+(t===it.tax_category?' selected':'')+'>'+t+'</option>';}).join('');
       return '<div class="irow" id="r'+ri+'irow'+i+'">'+
         '<input type="text" id="r'+ri+'nm'+i+'" value="'+(it.name||'').replace(/"/g,'&quot;')+'" placeholder="\u54c1\u76ee\u540d" style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;margin-bottom:6px"/>'+
+        '<select id="r'+ri+'ac'+i+'" style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;margin-bottom:6px">'+opts+'</select>'+
         '<div style="display:flex;gap:6px;margin-bottom:6px">'+
         '<select id="r'+ri+'tx'+i+'" style="flex:1;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit">'+tx+'</select>'+
         '<input type="number" id="r'+ri+'am'+i+'" value="'+it.amount+'" oninput="recalcTotB('+ri+')" style="width:110px;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;text-align:right"/>'+
