@@ -17,6 +17,20 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: '認証が必要です' });
   }
 
+  // 退職者QRの無効化：固定QR（?p=）由来の申請は、
+  // 固定された精算者が現在の在籍者リスト(PERSONS)に含まれているか照合する。
+  // PERSONS から名前を消すだけで、その人の古いQRが自動的に無効になる。
+  if (action === 'save' && req.body.fixed_person) {
+    let persons = [];
+    if (process.env.PERSONS) {
+      persons = process.env.PERSONS.split(',').map(s => s.trim()).filter(Boolean);
+    }
+    // PERSONS が設定されている場合のみ照合（未設定なら従来通り通す）
+    if (persons.length && !persons.includes(req.body.fixed_person)) {
+      return res.status(403).json({ error: 'このQRコードは現在ご利用いただけません。担当者にお問い合わせください。' });
+    }
+  }
+
   try {
     const r = await fetch(process.env.GAS_URL, {
       method: 'POST',
