@@ -446,7 +446,7 @@ function loadFromSheet(cb) {
   .then(function(d){if(d.ok) cb(d); else cb(null);})
   .catch(function(e){console.log('Sheet load error:', e); cb(null);});
 }
-var ACS = ['駐車料','タクシー代','運転代行','高速料金','ガソリン代','自賠責保険','ドリンク代','残業食事代','草刈食事代','弁当代','テキスト代','くすり','試験代','飲食代','打ち合せ','贈答品代','手土産代','ゴルフ','香典','消耗品','作業着','業務用備品','器具備品','日本青年会議所','印紙代','検査登録印紙・審査証紙','手数料','浄化槽清掃代','種苗・植木・肥料代','電話代','物置電気代','定期購読新聞代','荷造運賃','その他'];
+var ACS = ['駐車料','タクシー代','運転代行','高速料金','ガソリン代','自賠責保険代','ドリンク代','残業食事代','草刈食事代','弁当代','テキスト代','くすり','試験代','飲食代','打ち合せ','贈答品代','手土産代','ゴルフ','香典','消耗品','作業着','業務用備品','器具備品','日本青年会議所','印紙代','検査登録印紙・審査証紙','手数料','浄化槽清掃代','種苗・植木・肥料代','電話代','物置電気代','定期購読新聞代','荷造運賃','その他'];
   
 var AM = {
   '駐車場':'駐車代','パーキング':'駐車代',
@@ -1032,6 +1032,21 @@ function applyDetailB(ri){
         '<span style="flex:1">消費税</span><span style="margin-left:8px">¥'+fmt(taxAmt2)+'</span></div>';
     }
     summaryEl.innerHTML = newList || '<div style="font-size:12px;color:#9ca3af">（品目なし）</div>';
+
+    // インボイス警告の再評価（非課税・不課税のみなら非表示）
+    var invFlagEl = summaryEl.previousElementSibling;
+    // invFlagElがinvFlag divか確認（backgroundが#fef3c7のもの）
+    var allNoTax2 = newItems.length > 0 && newItems.every(function(it){
+      return it.tax_category === '非課税' || it.tax_category === '不課税';
+    });
+    var ivEl2 = document.getElementById('r'+ri+'inv');
+    var hasInv = ivEl2 && ivEl2.value.trim() !== '';
+    // invFlagを探して表示/非表示を切り替え
+    var card2 = summaryEl.closest ? summaryEl.closest('.card') : null;
+    if(card2){
+      var flags = card2.querySelectorAll('[data-invflag]');
+      flags.forEach(function(f){ f.style.display = (hasInv || allNoTax2) ? 'none' : 'inline-block'; });
+    }
   }
 
   // 合計・ラベル・警告を再計算
@@ -1251,9 +1266,12 @@ function showAllForms(person){
         '<span style="flex:1">消費税</span><span style="margin-left:8px">\u00a5'+fmt(taxAmt)+'</span></div>';
     }
 
-    // \u30a4\u30f3\u30dc\u30a4\u30b9\u30d5\u30e9\u30b0
-    var invFlag = d.invoice_number ? '' :
-      '<div style="background:#fef3c7;color:#b45309;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:600;margin-bottom:10px;display:inline-block">\u26a0 \u30a4\u30f3\u30dc\u30a4\u30b9\u756a\u53f7\u306f\u4e8b\u52d9\u6240\u3067\u78ba\u8a8d\u3057\u307e\u3059</div>';
+    // インボイスフラグ：非課税・不課税のみのレシートは不要
+    var allNoTax = items.length > 0 && items.every(function(it){
+      return it.tax_category === '非課税' || it.tax_category === '不課税';
+    });
+    var invFlag = (d.invoice_number || allNoTax) ? '' :
+      '<div data-invflag="1" style="background:#fef3c7;color:#b45309;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:600;margin-bottom:10px;display:inline-block">\u26a0 \u30a4\u30f3\u30dc\u30a4\u30b9\u756a\u53f7\u306f\u4e8b\u52d9\u6240\u3067\u78ba\u8a8d\u3057\u307e\u3059</div>';
 
   
     // \u660e\u7d30\u4fee\u6b63\u7528\uff08\u6298\u308a\u305f\u305f\u307f\uff09
@@ -1415,8 +1433,8 @@ function showAllForms(person){
         };
       }
 
-      // 店名・日付・インボイス：明細を開いて編集していれば編集欄、なければ非表示の保持値
-      function val(id){ var e=$e('r'+ri+id); var h=$e('r'+ri+id+'_h'); return (e&&e.value!=='')?e.value:(h?h.value:''); }
+      // 店名・日付・インボイス・車番：編集欄があれば必ずその値を使う（applyDetailB不要）
+      function val(id){ var e=$e('r'+ri+id); var h=$e('r'+ri+id+'_h'); if(e) return e.value; return h?h.value:''; }
       var store=val('store'), date=val('date'), inv=val('inv'), car=val('car');
       // 明細：編集欄があれば反映、なければ解析値。勘定科目は明細欄優先、なければ用途を適用
       var items=(d.items||[]).map(function(it,i){
