@@ -11,7 +11,6 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  // 認証チェック（トークンが無ければ拒否＝API乱用・コスト爆発を防ぐ）
   if (!verifyToken(req.headers['x-access-token'], 'user')) {
     return res.status(401).json({ error: '認証が必要です' });
   }
@@ -40,6 +39,9 @@ export default async function handler(req, res) {
             { type: 'text', text: `この画像がレシート・領収書でない場合は {"error":"レシートではありません"} のみ返してください。
 
 レシート・領収書の場合は以下のルールでJSONのみ返してください。説明不要。
+
+【画像の向きについて】
+- 画像が横向き（90°・180°・270°回転）の場合でも、文字列の向きから上下左右を自動判定して正しく読み取ること。回転していても全てのテキストを正確に読み取ること。
 
 重要ルール：
 - nameはレシートに印字された文字を一字一句そのままコピー。要約・翻訳・省略・変換禁止
@@ -96,7 +98,6 @@ export default async function handler(req, res) {
     if (s === -1 || e === -1) return res.status(500).json({ error: 'JSONが見つかりません' });
     let jsonStr = text.slice(s, e + 1);
 
-    // JSONを解析（崩れていれば自動修復してから再試行）
     let parsedRaw;
     try {
       parsedRaw = JSON.parse(jsonStr);
@@ -105,7 +106,6 @@ export default async function handler(req, res) {
       try {
         parsedRaw = JSON.parse(repaired);
       } catch (e2) {
-        // それでもダメなら、エラー位置の手前までで切り詰めて配列・オブジェクトを閉じてみる
         const salvaged = salvageJSON(jsonStr);
         if (salvaged) {
           try { parsedRaw = JSON.parse(salvaged); } catch (e3) { parsedRaw = null; }
@@ -116,12 +116,10 @@ export default async function handler(req, res) {
       }
     }
 
-    // レシートでないと判定された場合
     if (parsedRaw.error) {
       return res.status(400).json({ error: parsedRaw.error });
     }
 
-    // receipts配列に正規化（旧形式：単一レシートが返ってきた場合も配列に包む）
     let receipts = [];
     if (Array.isArray(parsedRaw.receipts)) {
       receipts = parsedRaw.receipts;
@@ -134,7 +132,6 @@ export default async function handler(req, res) {
     const validAccounts = ['駐車代','タクシー代','飲料代','飲食代','打ち合わせ','残業食事代','草刈り食事代','消耗品','自賠責保険代','不明','雑費','会費'];
     const discountPattern = /割引|値引|クーポン|ポイント|code\d+|discount/i;
 
-    // 各レシートごとに値引き統合・勘定科目の検証を行う
     receipts = receipts.map(rcpt => {
       if (Array.isArray(rcpt.items)) {
         let items = rcpt.items.map(item => {
@@ -159,7 +156,6 @@ export default async function handler(req, res) {
       return rcpt;
     });
 
-    // 後方互換：先頭レシートのフィールドもトップレベルに展開して返す
     const first = receipts[0] || {};
     return res.status(200).json({ ...first, receipts });
 
@@ -168,26 +164,17 @@ export default async function handler(req, res) {
   }
 }
 
-// JSONのよくある崩れを修復する
 function repairJSON(str) {
   let s = str;
-  // 制御文字（生の改行・タブが文字列内に紛れ込んだ場合）を除去しすぎない範囲で正規化
-  // 末尾の余分なカンマ（,} や ,]）を除去
   s = s.replace(/,\s*([}\]])/g, '$1');
-  // 連続するカンマを1つに
   s = s.replace(/,\s*,/g, ',');
-  // 数値の桁区切りカンマ（"amount": 1,572 のような誤り）を除去：数字,数字3桁 を結合
   s = s.replace(/(\d),(\d{3})(?=[\s,}\]])/g, '$1$2');
-  // 全角の引用符やコロンを半角へ
   s = s.replace(/：/g, ':').replace(/、/g, ',');
   return s;
 }
 
-// 壊れたJSONを、途中まででも有効な形に切り詰めて復元する
-// 開いている { [ を数えて、足りない分を閉じる
 function salvageJSON(str) {
   let s = repairJSON(str);
-  // 最後の完全な要素までで切る：直近の } または ] の位置を探しつつ括弧を閉じる
   let depth = 0, inStr = false, esc = false, stack = [];
   let lastSafe = -1;
   for (let i = 0; i < s.length; i++) {
@@ -201,11 +188,8 @@ function salvageJSON(str) {
     else if (c === ',' && stack.length <= 2) { lastSafe = i; }
   }
   if (lastSafe === -1) return null;
-  // lastSafeまで取り、開いている括弧を閉じる
   let head = s.slice(0, lastSafe);
-  // 末尾がカンマなら除去
   head = head.replace(/,\s*$/, '');
-  // 開いている括弧を数えて閉じる
   let open = [], inS = false, es = false;
   for (let i = 0; i < head.length; i++) {
     const c = head[i];
