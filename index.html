@@ -840,6 +840,9 @@ function addManualReceipt(){
 function syncUseSelections(){
   RECEIPTS.forEach(function(r,ri){
     var u=$e('r'+ri+'use'); if(u) r._use=u.value;
+    // 内税/外税の選択を保持
+    var totEl=$e('r'+ri+'tot');
+    if(totEl) r._taxType = totEl.getAttribute('data-taxtype') || r._taxType || 'inclusive';
     if(r.manual){
       var st=$e('r'+ri+'mstore'); if(st) r.mstore=st.value;
       var dt=$e('r'+ri+'mdate'); if(dt) r.mdate=dt.value;
@@ -907,19 +910,97 @@ function recalcTotB(ri){
   }
   var totEl=document.getElementById('r'+ri+'tot');
   var tax=totEl?(parseInt(totEl.getAttribute('data-tax'),10)||0):0;
-  var stated=totEl?(parseInt(totEl.getAttribute('data-original'),10)||0):0;
-  // 内税（品目に税込）なら表示は品目合計、外税なら品目合計＋税
-  // 記載合計に近い方を採用
-  var inclusive = itemsSum;          // 内税想定の税込合計
-  var exclusive = itemsSum + tax;    // 外税想定の税込合計
+  // ユーザーが選択した税種別（内税/外税）を優先
+  var taxType = (RECEIPTS[ri] && RECEIPTS[ri]._taxType) || (totEl ? totEl.getAttribute('data-taxtype') : 'inclusive');
   var shownTotal;
-  if(stated && Math.abs(exclusive - stated) < Math.abs(inclusive - stated)){
-    shownTotal = exclusive;          // 外税のほうが記載に近い
+  if(taxType === 'exclusive'){
+    shownTotal = itemsSum + tax;
   } else {
-    shownTotal = inclusive;          // 内税（または税0）
+    shownTotal = itemsSum;
   }
   if(totEl) totEl.textContent='¥'+fmt(shownTotal);
+  updateTotLabelB(ri);
   checkWarnB(ri);
+}
+
+// 内税/外税トグル切り替え
+function setTaxTypeB(ri, type){
+  if(RECEIPTS[ri]) RECEIPTS[ri]._taxType = type;
+  var totEl = document.getElementById('r'+ri+'tot');
+  if(totEl) totEl.setAttribute('data-taxtype', type);
+  // ボタンスタイル更新
+  var btnIn = document.getElementById('r'+ri+'ttype-in');
+  var btnEx = document.getElementById('r'+ri+'ttype-ex');
+  if(btnIn && btnEx){
+    var isEx = (type === 'exclusive');
+    btnIn.style.borderColor = isEx ? '#e5e7eb' : '#16a34a';
+    btnIn.style.background  = isEx ? '#fff'    : '#f0fdf4';
+    btnIn.style.color       = isEx ? '#6b7280' : '#16a34a';
+    btnEx.style.borderColor = isEx ? '#16a34a' : '#e5e7eb';
+    btnEx.style.background  = isEx ? '#f0fdf4' : '#fff';
+    btnEx.style.color       = isEx ? '#16a34a' : '#6b7280';
+  }
+  recalcTotB(ri);
+}
+
+// 明細の税区分に応じて合計ラベルを更新
+function updateTotLabelB(ri){
+  var labelEl = document.getElementById('r'+ri+'totlabel');
+  if(!labelEl) return;
+  // 現在の明細の税区分を確認
+  var allTxCats = [];
+  var i = 0;
+  while(true){
+    var txEl = document.getElementById('r'+ri+'tx'+i);
+    if(!txEl) break;
+    var amEl = document.getElementById('r'+ri+'am'+i);
+    if(!amEl || amEl.getAttribute('data-removed') === '1'){ i++; continue; }
+    allTxCats.push(txEl.value);
+    i++;
+  }
+  var label;
+  if(allTxCats.length > 0){
+    var allNon  = allTxCats.every(function(t){ return t === '非課税'; });
+    var allFree = allTxCats.every(function(t){ return t === '不課税'; });
+    if(allNon)       label = '合計（非課税）';
+    else if(allFree) label = '合計（不課税）';
+    else             label = '合計（税込）';
+  } else {
+    // 明細未展開時はRECEIPTSのデータから判定
+    var d2 = RECEIPTS[ri] ? (RECEIPTS[ri].data || {}) : {};
+    var its = d2.items || [];
+    var allNon2  = its.length > 0 && its.every(function(it){ return it.tax_category === '非課税'; });
+    var allFree2 = its.length > 0 && its.every(function(it){ return it.tax_category === '不課税'; });
+    if(allNon2)       label = '合計（非課税）';
+    else if(allFree2) label = '合計（不課税）';
+    else              label = '合計（税込）';
+  }
+  labelEl.textContent = label;
+}
+
+// 明細「修正を反映する」ボタン：合計・ラベル・警告を更新し、ストアなどの値も保存
+function applyDetailB(ri){
+  // 店名・日付・インボイスを保持inputに転写
+  var stEl = document.getElementById('r'+ri+'store');
+  var dtEl = document.getElementById('r'+ri+'date');
+  var ivEl = document.getElementById('r'+ri+'inv');
+  var stH  = document.getElementById('r'+ri+'store_h');
+  var dtH  = document.getElementById('r'+ri+'date_h');
+  var ivH  = document.getElementById('r'+ri+'inv_h');
+  if(stEl && stH) stH.value = stEl.value;
+  if(dtEl && dtH) dtH.value = dtEl.value;
+  if(ivEl && ivH) ivH.value = ivEl.value;
+  // 合計・ラベル・警告を再計算
+  recalcTotB(ri);
+  // 反映完了フラッシュ
+  var btn = event && event.target ? event.target : null;
+  if(btn){
+    var origText = btn.textContent;
+    var origBg   = btn.style.background;
+    btn.textContent = '✓ 反映しました';
+    btn.style.background = '#0f766e';
+    setTimeout(function(){ btn.textContent = origText; btn.style.background = origBg; }, 1200);
+  }
 }
 // 警告チェック（内税・外税どちらでも誤検知しない）
 // 品目合計（内税想定）か、品目合計＋税額（外税想定）のどちらかがレシート記載合計に一致すればOK
@@ -929,6 +1010,7 @@ function checkWarnB(ri){
   var totEl=document.getElementById('r'+ri+'tot');
   var stated=totEl?(parseInt(totEl.getAttribute('data-original'),10)||0):0;
   var tax=totEl?(parseInt(totEl.getAttribute('data-tax'),10)||0):0;
+  var taxType = (RECEIPTS[ri] && RECEIPTS[ri]._taxType) || (totEl ? totEl.getAttribute('data-taxtype') : 'inclusive');
   // 現在の明細合計を集計
   var itemsSum=0, i=0, hasItems=false;
   while(true){
@@ -939,20 +1021,17 @@ function checkWarnB(ri){
     itemsSum+=isNaN(v)?0:v;
     i++;
   }
-  // 編集欄が無い場合は表示中の合計から推定
   if(!hasItems && totEl){
     var shown = parseInt(String(totEl.textContent).replace(/[^0-9-]/g,''),10)||0;
     itemsSum = shown;
   }
   if(!stated){ warnEl.style.display='none'; return; }
-  // 内税（品目に税込）の場合：itemsSum ≒ stated
-  // 外税（品目が税抜）の場合：itemsSum + tax ≒ stated
-  var diffInclusive = Math.abs(itemsSum - stated);        // 内税想定
-  var diffExclusive = Math.abs((itemsSum + tax) - stated); // 外税想定
-  var minDiff = Math.min(diffInclusive, diffExclusive);
-  if(minDiff > 1){
+  // ユーザーが選択した税種別で比較
+  var calcTotal = (taxType === 'exclusive') ? (itemsSum + tax) : itemsSum;
+  var diff = Math.abs(calcTotal - stated);
+  if(diff > 1){
     warnEl.style.display='block';
-    warnEl.innerHTML='⚠️ 明細の合計（¥'+fmt(itemsSum)+'）が、レシート記載の合計（¥'+fmt(stated)+'）と一致しません。金額を確認してください。';
+    warnEl.innerHTML='⚠️ 明細の合計（¥'+fmt(calcTotal)+'）が、レシート記載の合計（¥'+fmt(stated)+'）と一致しません。金額または内税/外税の設定を確認してください。';
   } else {
     warnEl.style.display='none';
   }
@@ -1146,6 +1225,26 @@ function showAllForms(person){
     }).join('');
 
 
+    // 内税/外税の初期判定
+    var initExclusive = (statedTotal > 0 && taxAmt > 0) &&
+      (Math.abs((sumItems + taxAmt) - statedTotal) < Math.abs(sumItems - statedTotal));
+    r._taxType = r._taxType || (initExclusive ? 'exclusive' : 'inclusive');
+    var isTaxExcl = (r._taxType === 'exclusive');
+
+    // 合計ラベルを品目の税区分に応じて決定する関数（表示用）
+    function getTaxLabel(ri2){
+      var r2 = RECEIPTS[ri2];
+      var d2 = r2 ? (r2.data || {}) : {};
+      var its = d2.items || [];
+      if(!its.length) return '（税込）';
+      var allNon = its.every(function(it){ return it.tax_category === '非課税'; });
+      var allFree = its.every(function(it){ return it.tax_category === '不課税'; });
+      if(allNon) return '（非課税）';
+      if(allFree) return '（不課税）';
+      return '（税込）';
+    }
+    var taxLabel = getTaxLabel(ri);
+
     card.innerHTML =
       '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">'+
         '<div><span class="rbadge">\u30ec\u30b7\u30fc\u30c8 '+(ri+1)+'</span>'+
@@ -1153,8 +1252,16 @@ function showAllForms(person){
           '<div><span style="color:#9ca3af;display:inline-block;width:56px">\u53d6\u5f15\u65e5</span>'+(d.date||today())+'</div>'+
           '<div><span style="color:#9ca3af;display:inline-block;width:56px">\u652f\u6255\u5148</span>'+(d.store_name||'(\u4e0d\u660e)')+'</div>'+
           '</div></div>'+
-        '<div style="text-align:right"><div id="r'+ri+'tot" data-original="'+statedTotal+'" data-tax="'+taxAmt+'" style="font-size:26px;font-weight:700;color:#dc2626;line-height:1.1">\u00a5'+fmt(displayTotal)+'</div><div style="font-size:11px;color:#9ca3af">\u5408\u8a08\uff08\u7a0e\u8fbc\uff09</div></div>'+
+        '<div style="text-align:right"><div id="r'+ri+'tot" data-original="'+statedTotal+'" data-tax="'+taxAmt+'" data-taxtype="'+(isTaxExcl?'exclusive':'inclusive')+'" style="font-size:26px;font-weight:700;color:#dc2626;line-height:1.1">\u00a5'+fmt(displayTotal)+'</div><div id="r'+ri+'totlabel" style="font-size:11px;color:#9ca3af">\u5408\u8a08'+taxLabel+'</div></div>'+
       '</div>'+
+      // 内税/外税 トグル（消費税がある場合のみ表示）
+      (taxAmt > 0 ?
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;background:#f3f4f6;border-radius:8px;padding:8px 12px">'+
+        '<span style="font-size:12px;color:#6b7280;font-weight:600;flex-shrink:0">税区分：</span>'+
+        '<button id="r'+ri+'ttype-in" onclick="setTaxTypeB('+ri+',\'inclusive\')" style="flex:1;padding:6px 0;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;border:2px solid '+(isTaxExcl?'#e5e7eb':'#16a34a')+';background:'+(isTaxExcl?'#fff':'#f0fdf4')+';color:'+(isTaxExcl?'#6b7280':'#16a34a')+'">内税（税込表示）</button>'+
+        '<button id="r'+ri+'ttype-ex" onclick="setTaxTypeB('+ri+',\'exclusive\')" style="flex:1;padding:6px 0;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;border:2px solid '+(isTaxExcl?'#16a34a':'#e5e7eb')+';background:'+(isTaxExcl?'#f0fdf4':'#fff')+';color:'+(isTaxExcl?'#16a34a':'#6b7280')+'">外税（税抜表示）</button>'+
+        '</div>'
+      : '') +
       '<div id="r'+ri+'warn" style="display:none;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:8px 12px;font-size:12px;color:#b45309;font-weight:600;margin-bottom:10px;line-height:1.6"></div>'+
       invFlag+
       '<div style="background:#f9fafb;border-radius:8px;padding:8px 12px;margin:10px 0">'+itemsList+'</div>'+
@@ -1170,7 +1277,10 @@ function showAllForms(person){
         '<input type="text" id="r'+ri+'store" value="'+(d.store_name||'').replace(/"/g,'&quot;')+'" placeholder="\u652f\u6255\u5148" style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;margin-bottom:6px"/>'+
         '<input type="text" id="r'+ri+'date" value="'+(d.date||today())+'" placeholder="\u53d6\u5f15\u65e5 YYYY-MM-DD" style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;margin-bottom:6px"/>'+
         '<input type="text" id="r'+ri+'inv" value="'+(d.invoice_number||'').replace(/"/g,'&quot;')+'" placeholder="\u30a4\u30f3\u30dc\u30a4\u30b9\u756a\u53f7 T..." style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;margin-bottom:10px"/>'+
-        '<div style="font-size:12px;color:#9ca3af;margin-bottom:6px">\u660e\u7d30</div>'+editRows+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
+          '<div style="font-size:12px;color:#9ca3af">\u660e\u7d30</div>'+
+          '<button onclick="applyDetailB('+ri+')" style="padding:6px 14px;background:#16a34a;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">\u2713 \u4fee\u6b63\u3092\u53cd\u6620\u3059\u308b</button>'+
+        '</div>'+editRows+
       '</div>'+
       // \u975e\u8868\u793a\u306e\u4fdd\u6301\u7528\uff08detail\u3092\u958b\u304b\u306a\u304f\u3066\u3082\u7533\u8acb\u30c7\u30fc\u30bf\u306b\u4f7f\u3046\uff09
       '<div style="display:none">'+
@@ -1273,19 +1383,15 @@ function showAllForms(person){
       }).filter(function(x){return x!==null;});
       var itemsSum=items.reduce(function(s,it){return s+(Number(it.amount)||0);},0);
       var taxAmt=(Number(d.tax_8)||0)+(Number(d.tax_10)||0);
-      // 元の解析時の品目合計
+      // ユーザーが選択した内税/外税設定を使用
+      var taxType = r._taxType || 'inclusive';
+      var isExclusive = (taxType === 'exclusive');
+      // 品目が修正されたか
       var origSum=(d.items||[]).reduce(function(s,it){return s+(Number(it.amount)||0);},0);
-      // 品目が修正されたか（合計が変わったか）で判定
       var edited = (itemsSum !== origSum);
-      // 修正されていれば「修正後の品目合計＋税額」、未修正なら記載合計（あれば）を尊重
       var rTotal;
       var statedT = (d.total!=null) ? Number(d.total) : null;
-      // 元レシートが内税か外税かを判定（記載合計に近い方）
-      var origInclusive = origSum;            // 内税想定（品目に税込）
-      var origExclusive = origSum + taxAmt;   // 外税想定（品目が税抜）
-      var isExclusive = (statedT!=null) && (Math.abs(origExclusive - statedT) < Math.abs(origInclusive - statedT));
       if(edited){
-        // 修正後：内税なら品目合計そのまま、外税なら品目合計＋税
         rTotal = isExclusive ? (itemsSum + taxAmt) : itemsSum;
       } else {
         rTotal = (statedT!=null) ? statedT : (isExclusive ? (itemsSum + taxAmt) : itemsSum);
