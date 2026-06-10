@@ -847,6 +847,16 @@ function setUseB(ri, v){
   if(RECEIPTS[ri]) RECEIPTS[ri]._use = v;
   var ow=document.getElementById('r'+ri+'otherwrap');
   if(ow) ow.style.display = (v==='__other') ? 'block' : 'none';
+  // 明細の勘定科目ドロップダウンを用途に連動させる
+  if(v && v !== '__other'){
+    var i=0;
+    while(true){
+      var acEl=document.getElementById('r'+ri+'ac'+i);
+      if(!acEl) break;
+      acEl.value=v;
+      i++;
+    }
+  }
 }
 function removeReceiptB(ri){
   if(!confirm('レシート'+(ri+1)+'を削除しますか？')) return;
