@@ -978,7 +978,7 @@ function updateTotLabelB(ri){
   labelEl.textContent = label;
 }
 
-// 明細「修正を反映する」ボタン：合計・ラベル・警告を更新し、ストアなどの値も保存
+// 明細「修正を反映する」ボタン：合計・ラベル・警告＋上のサマリー表示を更新
 function applyDetailB(ri){
   // 店名・日付・インボイスを保持inputに転写
   var stEl = document.getElementById('r'+ri+'store');
@@ -990,8 +990,50 @@ function applyDetailB(ri){
   if(stEl && stH) stH.value = stEl.value;
   if(dtEl && dtH) dtH.value = dtEl.value;
   if(ivEl && ivH) ivH.value = ivEl.value;
+
+  // ── 上のサマリー（グレーのitemsListエリア）を書き換え ──
+  var summaryEl = document.getElementById('r'+ri+'summary');
+  if(summaryEl){
+    var r2 = RECEIPTS[ri];
+    var d2 = r2 ? (r2.data || {}) : {};
+    var taxAmt2 = (Number(d2.tax_8)||0) + (Number(d2.tax_10)||0);
+    // 現在の編集欄から品目を再収集
+    var newItems = [];
+    var j = 0;
+    while(true){
+      var nmEl = document.getElementById('r'+ri+'nm'+j);
+      var amEl = document.getElementById('r'+ri+'am'+j);
+      var txEl = document.getElementById('r'+ri+'tx'+j);
+      if(!nmEl || !amEl) break;
+      if(amEl.getAttribute('data-removed') !== '1'){
+        newItems.push({
+          name: nmEl.value,
+          amount: parseInt(amEl.value,10)||0,
+          tax_category: txEl ? txEl.value : ''
+        });
+      }
+      j++;
+    }
+    // サマリーHTMLを再生成
+    var newList = newItems.map(function(it){
+      var t8 = (it.tax_category && it.tax_category.indexOf('8%')>=0) ? '<span style="color:#16a34a;font-size:10px;margin-left:4px">8%</span>' : '';
+      var nonTax = (it.tax_category === '非課税' || it.tax_category === '不課税')
+        ? '<span style="color:#9ca3af;font-size:10px;margin-left:4px">'+it.tax_category+'</span>' : '';
+      var amtColor = (it.amount < 0) ? '#dc2626' : '#9ca3af';
+      return '<div style="display:flex;justify-content:space-between;font-size:12px;color:#6b7280;padding:3px 0">'+
+        '<span style="flex:1">'+it.name+t8+nonTax+'</span>'+
+        '<span style="color:'+amtColor+';margin-left:8px">¥'+fmt(it.amount)+'</span></div>';
+    }).join('');
+    if(taxAmt2 > 0){
+      newList += '<div style="display:flex;justify-content:space-between;font-size:12px;color:#9ca3af;padding:3px 0;border-top:1px dashed #e5e7eb;margin-top:3px">'+
+        '<span style="flex:1">消費税</span><span style="margin-left:8px">¥'+fmt(taxAmt2)+'</span></div>';
+    }
+    summaryEl.innerHTML = newList || '<div style="font-size:12px;color:#9ca3af">（品目なし）</div>';
+  }
+
   // 合計・ラベル・警告を再計算
   recalcTotB(ri);
+
   // 反映完了フラッシュ
   var btn = event && event.target ? event.target : null;
   if(btn){
@@ -1264,7 +1306,7 @@ function showAllForms(person){
       : '') +
       '<div id="r'+ri+'warn" style="display:none;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:8px 12px;font-size:12px;color:#b45309;font-weight:600;margin-bottom:10px;line-height:1.6"></div>'+
       invFlag+
-      '<div style="background:#f9fafb;border-radius:8px;padding:8px 12px;margin:10px 0">'+itemsList+'</div>'+
+      '<div id="r'+ri+'summary" style="background:#f9fafb;border-radius:8px;padding:8px 12px;margin:10px 0">'+itemsList+'</div>'+
       '<label>\u7528\u9014\u3092\u9078\u3093\u3067\u304f\u3060\u3055\u3044</label>'+
       '<select id="r'+ri+'use" onchange="setUseB('+ri+',this.value)"><option value="">\u25bc \u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044</option>'+acOptions+'<option value="__other">\u305d\u306e\u4ed6\uff08\u81ea\u7531\u5165\u529b\uff09</option></select>'+
       '<div id="r'+ri+'otherwrap" style="display:none"><input id="r'+ri+'other" placeholder="\u7528\u9014\u3092\u5165\u529b" style="margin-top:8px;font-size:16px"/></div>'+
@@ -1277,10 +1319,8 @@ function showAllForms(person){
         '<input type="text" id="r'+ri+'store" value="'+(d.store_name||'').replace(/"/g,'&quot;')+'" placeholder="\u652f\u6255\u5148" style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;margin-bottom:6px"/>'+
         '<input type="text" id="r'+ri+'date" value="'+(d.date||today())+'" placeholder="\u53d6\u5f15\u65e5 YYYY-MM-DD" style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;margin-bottom:6px"/>'+
         '<input type="text" id="r'+ri+'inv" value="'+(d.invoice_number||'').replace(/"/g,'&quot;')+'" placeholder="\u30a4\u30f3\u30dc\u30a4\u30b9\u756a\u53f7 T..." style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;margin-bottom:10px"/>'+
-        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
-          '<div style="font-size:12px;color:#9ca3af">\u660e\u7d30</div>'+
-          '<button onclick="applyDetailB('+ri+')" style="padding:6px 14px;background:#16a34a;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">\u2713 \u4fee\u6b63\u3092\u53cd\u6620\u3059\u308b</button>'+
-        '</div>'+editRows+
+        '<div style="font-size:12px;color:#9ca3af;margin-bottom:6px">\u660e\u7d30</div>'+editRows+
+        '<button onclick="applyDetailB('+ri+')" style="display:block;width:100%;margin-top:10px;padding:11px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">\u2713 \u4fee\u6b63\u3092\u53cd\u6620\u3059\u308b</button>'+
       '</div>'+
       // \u975e\u8868\u793a\u306e\u4fdd\u6301\u7528\uff08detail\u3092\u958b\u304b\u306a\u304f\u3066\u3082\u7533\u8acb\u30c7\u30fc\u30bf\u306b\u4f7f\u3046\uff09
       '<div style="display:none">'+
