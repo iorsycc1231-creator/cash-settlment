@@ -430,6 +430,11 @@ function logoutAdmin(){
 function saveToSheet(app) {
   var data = Object.assign({action:'save'}, app);
   delete data.img;
+  // 固定QR（?p=）で開いた申請には、固定精算者フラグを付ける
+  // サーバー側で「この人が現在の在籍者リストにいるか」を照合し、退職者なら拒否する
+  if(FIXED_PERSON){
+    data.fixed_person = FIXED_PERSON;
+  }
   if(data.receipts) data.receipts = data.receipts.map(function(r){
     var r2 = Object.assign({},r); delete r2.b64; return r2;
   });
@@ -678,6 +683,17 @@ function showUpload(){
 
   // URL固定時は「○○さん専用」のバッジを表示
   if(FIXED_PERSON){
+    // 退職者チェック：固定された精算者が現在の在籍者リスト(PERSONS)にいなければ無効
+    var isActivePerson = !PERSONS.length || PERSONS.indexOf(FIXED_PERSON) >= 0;
+    if(!isActivePerson){
+      var ng = document.createElement('div');
+      ng.style.cssText = 'background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:14px;margin-top:8px;font-size:13px;color:#dc2626;font-weight:600;line-height:1.6';
+      ng.innerHTML = '⚠️ このQRコードは現在ご利用いただけません。<br>'+
+        '<span style="font-weight:400;font-size:12px">お手数ですが、最新のQRコードについて担当者にお問い合わせください。</span>';
+      card.appendChild(ng);
+      // 申請操作を一切させない（以降のフォーム構築を中止）
+      return;
+    }
     var fixedBadge = document.createElement('div');
     fixedBadge.style.cssText = 'background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:8px 12px;margin-top:8px;font-size:12px;color:#1d4ed8;font-weight:600';
     fixedBadge.textContent = '👤 ' + FIXED_PERSON + ' さん専用の申請フォームです';
