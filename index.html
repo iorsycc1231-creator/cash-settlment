@@ -994,6 +994,18 @@ function applyDetailB(ri){
   if(ivEl && ivH) ivH.value = ivEl.value;
   if(carEl && carH) carH.value = carEl.value;
 
+  // カード上部の表示テキストを書き換え
+  var hstore = document.getElementById('r'+ri+'hstore');
+  var hdate  = document.getElementById('r'+ri+'hdate');
+  var hcar   = document.getElementById('r'+ri+'hcar');
+  var hcarrow= document.getElementById('r'+ri+'hcarrow');
+  if(hstore && stEl) hstore.textContent = stEl.value || '(不明)';
+  if(hdate  && dtEl) hdate.textContent  = dtEl.value;
+  if(hcar   && carEl){
+    hcar.textContent = carEl.value;
+    if(hcarrow) hcarrow.style.display = carEl.value ? '' : 'none';
+  }
+
   // ── 上のサマリー（グレーのitemsListエリア）を書き換え ──
   var summaryEl = document.getElementById('r'+ri+'summary');
   if(summaryEl){
@@ -1315,9 +1327,9 @@ function showAllForms(person){
       '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">'+
         '<div><span class="rbadge">\u30ec\u30b7\u30fc\u30c8 '+(ri+1)+'</span>'+
           '<div style="font-size:13px;color:#374151;line-height:1.9;margin-top:8px">'+
-          '<div><span style="color:#9ca3af;display:inline-block;width:56px">\u53d6\u5f15\u65e5</span>'+(d.date||today())+'</div>'+
-          '<div><span style="color:#9ca3af;display:inline-block;width:56px">\u652f\u6255\u5148</span>'+(d.store_name||'(\u4e0d\u660e)')+'</div>'+
-          (d.car_number?'<div><span style="color:#9ca3af;display:inline-block;width:56px">車番</span><b style="color:#1c1917">'+d.car_number+'</b></div>':'')+
+          '<div><span style="color:#9ca3af;display:inline-block;width:56px">\u53d6\u5f15\u65e5</span><span id="r'+ri+'hdate">'+(d.date||today())+'</span></div>'+
+          '<div><span style="color:#9ca3af;display:inline-block;width:56px">\u652f\u6255\u5148</span><span id="r'+ri+'hstore">'+(d.store_name||'(\u4e0d\u660e)')+'</span></div>'+
+          (d.car_number?'<div id="r'+ri+'hcarrow"><span style="color:#9ca3af;display:inline-block;width:56px">車番</span><b id="r'+ri+'hcar" style="color:#1c1917">'+d.car_number+'</b></div>':'<div id="r'+ri+'hcarrow" style="display:none"><span style="color:#9ca3af;display:inline-block;width:56px">車番</span><b id="r'+ri+'hcar" style="color:#1c1917"></b></div>')+
           '</div></div>'+
         '<div style="text-align:right"><div id="r'+ri+'tot" data-original="'+statedTotal+'" data-tax="'+taxAmt+'" data-taxtype="'+(isTaxExcl?'exclusive':'inclusive')+'" style="font-size:26px;font-weight:700;color:#dc2626;line-height:1.1">\u00a5'+fmt(displayTotal)+'</div><div id="r'+ri+'totlabel" style="font-size:11px;color:#9ca3af">\u5408\u8a08'+taxLabel+'</div></div>'+
       '</div>'+
