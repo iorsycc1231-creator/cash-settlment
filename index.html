@@ -1033,6 +1033,9 @@ function applyDetailB(ri){
 
   // 合計・ラベル・警告を再計算
   recalcTotB(ri);
+  // 明細を閉じる
+  var detailEl = document.getElementById('r'+ri+'detail');
+  if(detailEl) detailEl.style.display = 'none';
 
   // 反映完了フラッシュ
   var btn = event && event.target ? event.target : null;
