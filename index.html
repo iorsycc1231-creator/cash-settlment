@@ -125,6 +125,7 @@ hr{border:none;border-top:1px solid #e5e7eb;margin:12px 0}
     <div style="font-size:11px;color:#9ca3af;font-weight:700;padding:14px 18px 4px">データ</div>
     <button class="dm-item" onclick="drawerAct(dlCSV)"><span class="dm-ic">📄</span>CSV出力</button>
     <button class="dm-item" onclick="drawerAct(openReceiptTray)"><span class="dm-ic">🗂</span>台紙印刷</button>
+    <button class="dm-item" onclick="drawerAct(openQRList)"><span class="dm-ic">📱</span>申請QRコード</button>
     <div style="font-size:11px;color:#9ca3af;font-weight:700;padding:14px 18px 4px">月次</div>
     <button class="dm-item" onclick="drawerAct(openCloseModal)"><span class="dm-ic">📅</span>月次締め</button>
     <div style="font-size:11px;color:#9ca3af;font-weight:700;padding:14px 18px 4px">その他</div>
@@ -446,7 +447,29 @@ function loadFromSheet(cb) {
   .then(function(d){if(d.ok) cb(d); else cb(null);})
   .catch(function(e){console.log('Sheet load error:', e); cb(null);});
 }
-var ACS = ['駐車料','タクシー代','運転代行','高速料金','ガソリン代','自賠責保険','ドリンク代','残業食事代','草刈食事代','弁当代','テキスト代','くすり','試験代','飲食代','打ち合せ','贈答品代','手土産代','ゴルフ','香典','消耗品','作業着','業務用備品','器具備品','日本青年会議所','印紙代','検査登録印紙・審査証紙','手数料','浄化槽清掃代','種苗・植木・肥料代','電話代','物置電気代','定期購読新聞代','荷造運賃','その他'];
+var ACS_ALL = ['駐車料','タクシー代','運転代行','高速料金','ガソリン代','自賠責保険','ドリンク代','残業食事代','草刈食事代','弁当代','テキスト代','くすり','試験代','飲食代','打ち合せ','贈答品代','手土産代','ゴルフ','香典','消耗品','作業着','業務用備品','器具備品','日本青年会議所','印紙代','検査登録印紙・審査証紙','手数料','浄化槽清掃代','種苗・植木・肥料代','電話代','物置電気代','定期購読新聞代','荷造運賃','その他'];
+var ACS = ACS_ALL.slice();  // 表示用（人別に絞り込まれることがある）
+
+// ログイン時にサーバーから受け取る：精算者リスト・人別用途
+var PERSONS = [];           // 精算者リスト（環境変数 PERSONS から）
+var PERSON_ACCOUNTS = {};   // 人別用途 {氏名:[用途...]}（環境変数 PERSON_ACCOUNTS から）
+
+// URLパラメータ ?p=氏名 で精算者を固定（QR用）。固定中は変更不可
+var FIXED_PERSON = (function(){
+  try { return new URLSearchParams(location.search).get('p') || ''; } catch(e){ return ''; }
+})();
+
+// 指定された精算者の用途リストを返す（設定がなければ全用途）
+function accountsFor(person){
+  if(person && PERSON_ACCOUNTS[person] && PERSON_ACCOUNTS[person].length > 0){
+    return PERSON_ACCOUNTS[person].slice();
+  }
+  return ACS_ALL.slice();
+}
+// 精算者が変わったら用途リストACSを切り替える
+function applyPersonAccounts(person){
+  ACS = accountsFor(person);
+}
   
 var AM = {
   '駐車場':'駐車代','パーキング':'駐車代',
@@ -638,8 +661,30 @@ function showUpload(){
 
   var sel = document.createElement('select');
   sel.id = 'up-person';
-  sel.innerHTML = '<option value="">-- 選択してください --</option><option>村井数正</option><option>松村武志</option><option>寺沢守弘</option><option>山田麻里子</option><option>菅生勇理愛</option>';
+  // 精算者リスト（サーバーから取得したPERSONS。なければ従来の固定リスト）
+  var personList = (PERSONS && PERSONS.length) ? PERSONS : ['村井数正','松村武志','寺沢守弘','山田麻里子','菅生勇理愛'];
+  // URLで精算者が固定されている場合（QR用）はその人だけ・変更不可
+  if(FIXED_PERSON){
+    sel.innerHTML = '<option value="'+FIXED_PERSON+'" selected>'+FIXED_PERSON+'</option>';
+    sel.disabled = true;
+    sel.style.background = '#f3f4f6';
+    sel.style.color = '#374151';
+    sel.style.fontWeight = '700';
+  } else {
+    sel.innerHTML = '<option value="">-- 選択してください --</option>' +
+      personList.map(function(p){ return '<option>'+p+'</option>'; }).join('');
+  }
   card.appendChild(sel);
+
+  // URL固定時は「○○さん専用」のバッジを表示
+  if(FIXED_PERSON){
+    var fixedBadge = document.createElement('div');
+    fixedBadge.style.cssText = 'background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:8px 12px;margin-top:8px;font-size:12px;color:#1d4ed8;font-weight:600';
+    fixedBadge.textContent = '👤 ' + FIXED_PERSON + ' さん専用の申請フォームです';
+    card.appendChild(fixedBadge);
+    // 用途を固定された精算者のものに切り替え
+    applyPersonAccounts(FIXED_PERSON);
+  }
 
   var msg = document.createElement('div');
   msg.id = 'select-msg';
@@ -694,6 +739,8 @@ function showUpload(){
 
   sel.onchange = function(){
     var val = sel.value;
+    // 選択された精算者の用途リストに切り替え
+    applyPersonAccounts(val);
     uploadArea.style.display = val ? 'block' : 'none';
     msg.style.display = val ? 'none' : 'block';
     if(val && !uz._bound){
@@ -721,6 +768,11 @@ function showUpload(){
       analyzeBtn.onclick = function(){analyzeAll();};
     }
   };
+
+  // URLで精算者固定されている場合は、最初からアップロードエリアを開く
+  if(FIXED_PERSON){
+    sel.onchange();
+  }
 }
 
 function compressImage(dataUrl, mime, maxW, quality, cb, rotation){
@@ -2172,12 +2224,13 @@ function renderAdminList(){
 }
 
 // ===== 一括精算 =====
-var BULK_PEOPLE = ['村井数正','松村武志','寺沢守弘','山田麻里子','菅生勇理愛'];
+var BULK_PEOPLE_DEFAULT = ['村井数正','松村武志','寺沢守弘','山田麻里子','菅生勇理愛'];
+function bulkPeople(){ return (PERSONS && PERSONS.length) ? PERSONS : BULK_PEOPLE_DEFAULT; }
 var BULK_SELECTED = [];
 function openBulkSettle(){
   var sel=$e('bulk-person');
   // 未精算がある人だけ選べるように、全員＋件数を出す
-  sel.innerHTML='<option value="">-- 選択してください --</option>'+BULK_PEOPLE.map(function(p){
+  sel.innerHTML='<option value="">-- 選択してください --</option>'+bulkPeople().map(function(p){
     var cnt=APPS.filter(function(a){return !a.deleted && !isPaid(a) && a.person===p;}).length;
     return '<option value="'+p+'">'+p+'（未精算 '+cnt+'件）</option>';
   }).join('');
@@ -2700,6 +2753,61 @@ function dlCSV(){
   link.click();
 }
 
+// 精算者ごとの申請用QRコードを一覧表示・印刷する
+function openQRList(){
+  var people = (PERSONS && PERSONS.length) ? PERSONS : BULK_PEOPLE_DEFAULT;
+  if(!people.length){ alert('精算者リストが取得できませんでした'); return; }
+
+  // アプリのベースURL（クエリ・ハッシュを除いたもの）
+  var baseUrl = location.origin + location.pathname;
+
+  var cards = people.map(function(p){
+    var url = baseUrl + '?p=' + encodeURIComponent(p);
+    // QRコード画像（外部QR生成サービス）
+    var qrSrc = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=10&data=' + encodeURIComponent(url);
+    return '<div class="qr-card">'+
+      '<div class="qr-name">'+p+'</div>'+
+      '<img class="qr-img" src="'+qrSrc+'" alt="QR '+p+'"/>'+
+      '<div class="qr-url">'+url+'</div>'+
+      '<div class="qr-hint">読み取ると '+p+' さん専用の申請フォームが開きます</div>'+
+      '</div>';
+  }).join('');
+
+  var html = '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"/>'+
+    '<meta name="viewport" content="width=device-width, initial-scale=1.0"/>'+
+    '<title>申請QRコード一覧</title>'+
+    '<style>'+
+    '@import url(\'https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;600;700&display=swap\');'+
+    '*{box-sizing:border-box;margin:0;padding:0}'+
+    'body{font-family:\'Noto Sans JP\',sans-serif;background:#fff;color:#000;padding:0}'+
+    '.no-print{text-align:center;padding:16px;background:#f3f4f6}'+
+    '.no-print button{padding:10px 28px;background:#1c1917;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin:0 6px}'+
+    '.no-print .sub{font-size:12px;color:#6b7280;margin-top:8px}'+
+    '.qr-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:20px;max-width:800px;margin:0 auto}'+
+    '.qr-card{border:2px solid #1c1917;border-radius:12px;padding:18px;text-align:center;page-break-inside:avoid;break-inside:avoid}'+
+    '.qr-name{font-size:20px;font-weight:700;margin-bottom:10px}'+
+    '.qr-img{width:200px;height:200px;display:block;margin:0 auto 10px}'+
+    '.qr-url{font-size:9px;color:#9ca3af;word-break:break-all;margin-bottom:6px}'+
+    '.qr-hint{font-size:11px;color:#374151}'+
+    '@media print{'+
+    '.no-print{display:none!important}'+
+    'body{-webkit-print-color-adjust:exact;print-color-adjust:exact}'+
+    '.qr-grid{padding:8mm}'+
+    '}'+
+    '</style></head><body>'+
+    '<div class="no-print">'+
+      '<button onclick="window.print()">🖨 印刷する</button>'+
+      '<button onclick="window.close()">✕ 閉じる</button>'+
+      '<div class="sub">各QRを読み取ると、その精算者専用の申請フォームが開きます（精算者の変更はできません）</div>'+
+    '</div>'+
+    '<div class="qr-grid">'+cards+'</div>'+
+    '</body></html>';
+
+  var win = window.open('', '_blank');
+  win.document.write(html);
+  win.document.close();
+}
+
 function openReceiptTray(){
   var paid = APPS.filter(function(a){ return isPaid(a); });
   if(!paid.length){ alert('精算完了の申請がありません'); return; }
@@ -2807,6 +2915,9 @@ function checkGate(){
   .then(function(d){
     USER_TOKEN = d.token;
     sessionStorage.setItem('user_token', d.token);
+    // サーバーから精算者リスト・人別用途を受け取る
+    if(d.persons && d.persons.length){ PERSONS = d.persons; }
+    if(d.personAccounts){ PERSON_ACCOUNTS = d.personAccounts; }
     document.getElementById('gate-ov').classList.remove('active');
     startApp();
   })
