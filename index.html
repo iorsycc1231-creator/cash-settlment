@@ -2754,6 +2754,9 @@ function dlCSV(){
 }
 
 // 精算者ごとの申請用QRコードを一覧表示・印刷する
+// 役員グループ（ここに書いた人が役員。それ以外は自動的に従業員になる）
+var QR_YAKUIN = ['村井数正','松村武志','寺沢守弘'];
+
 function openQRList(){
   var people = (PERSONS && PERSONS.length) ? PERSONS : BULK_PEOPLE_DEFAULT;
   if(!people.length){ alert('精算者リストが取得できませんでした'); return; }
@@ -2761,17 +2764,37 @@ function openQRList(){
   // アプリのベースURL（クエリ・ハッシュを除いたもの）
   var baseUrl = location.origin + location.pathname;
 
-  var cards = people.map(function(p){
+  // 役員・従業員に振り分け
+  var yakuin = people.filter(function(p){ return QR_YAKUIN.indexOf(p) >= 0; });
+  var jugyoin = people.filter(function(p){ return QR_YAKUIN.indexOf(p) < 0; });
+
+  // 1人分のQRカードHTML
+  function cardHtml(p){
     var url = baseUrl + '?p=' + encodeURIComponent(p);
-    // QRコード画像（外部QR生成サービス）
     var qrSrc = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=10&data=' + encodeURIComponent(url);
     return '<div class="qr-card">'+
       '<div class="qr-name">'+p+'</div>'+
       '<img class="qr-img" src="'+qrSrc+'" alt="QR '+p+'"/>'+
-      '<div class="qr-url">'+url+'</div>'+
       '<div class="qr-hint">読み取ると '+p+' さん専用の申請フォームが開きます</div>'+
       '</div>';
-  }).join('');
+  }
+
+  // 1グループ分のセクションHTML（見出し＋6枚グリッド）
+  function sectionHtml(title, list, groupClass){
+    if(!list.length) return '';
+    var cards = list.map(cardHtml).join('');
+    return '<div class="qr-section '+groupClass+'">'+
+      '<div class="qr-section-head no-screen-hide">'+
+        '<span class="qr-section-title">'+title+'</span>'+
+        '<button class="sec-print" onclick="printGroup(\''+groupClass+'\')">🖨 この'+title+'分を印刷</button>'+
+      '</div>'+
+      '<div class="qr-grid">'+cards+'</div>'+
+      '</div>';
+  }
+
+  var sections =
+    sectionHtml('役員', yakuin, 'grp-yakuin') +
+    sectionHtml('従業員', jugyoin, 'grp-jugyoin');
 
   var html = '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"/>'+
     '<meta name="viewport" content="width=device-width, initial-scale=1.0"/>'+
@@ -2781,26 +2804,42 @@ function openQRList(){
     '*{box-sizing:border-box;margin:0;padding:0}'+
     'body{font-family:\'Noto Sans JP\',sans-serif;background:#fff;color:#000;padding:0}'+
     '.no-print{text-align:center;padding:16px;background:#f3f4f6}'+
-    '.no-print button{padding:10px 28px;background:#1c1917;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin:0 6px}'+
+    '.no-print button{padding:10px 24px;background:#1c1917;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin:4px}'+
     '.no-print .sub{font-size:12px;color:#6b7280;margin-top:8px}'+
-    '.qr-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:20px;max-width:800px;margin:0 auto}'+
-    '.qr-card{border:2px solid #1c1917;border-radius:12px;padding:18px;text-align:center;page-break-inside:avoid;break-inside:avoid}'+
-    '.qr-name{font-size:20px;font-weight:700;margin-bottom:10px}'+
-    '.qr-img{width:200px;height:200px;display:block;margin:0 auto 10px}'+
-    '.qr-url{font-size:9px;color:#9ca3af;word-break:break-all;margin-bottom:6px}'+
-    '.qr-hint{font-size:11px;color:#374151}'+
+    '.qr-section{padding:12px 20px 20px}'+
+    '.qr-section-head{display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #1c1917;padding:8px 4px;margin-bottom:14px}'+
+    '.qr-section-title{font-size:18px;font-weight:700}'+
+    '.sec-print{padding:7px 16px;background:#1d4ed8;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}'+
+    // 1ページ6つ＝2列×3行
+    '.qr-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}'+
+    '.qr-card{border:2px solid #1c1917;border-radius:12px;padding:14px;text-align:center;page-break-inside:avoid;break-inside:avoid}'+
+    '.qr-name{font-size:18px;font-weight:700;margin-bottom:8px}'+
+    '.qr-img{width:170px;height:170px;display:block;margin:0 auto 8px}'+
+    '.qr-hint{font-size:10px;color:#374151}'+
     '@media print{'+
-    '.no-print{display:none!important}'+
+    '.no-print,.no-screen-hide{display:none!important}'+
     'body{-webkit-print-color-adjust:exact;print-color-adjust:exact}'+
-    '.qr-grid{padding:8mm}'+
+    '.qr-section{padding:8mm}'+
+    // 印刷時：6枚ごとに改ページ（7枚目以降が次ページへ）
+    '.qr-card:nth-child(6n+7){page-break-before:always;break-before:page}'+
+    // グループ印刷モード：指定グループ以外を隠す
+    'body.print-grp-yakuin .grp-jugyoin{display:none!important}'+
+    'body.print-grp-jugyoin .grp-yakuin{display:none!important}'+
+    // セクション単位で改ページ（役員と従業員を別ページに）
+    '.grp-jugyoin{page-break-before:always;break-before:page}'+
     '}'+
     '</style></head><body>'+
     '<div class="no-print">'+
-      '<button onclick="window.print()">🖨 印刷する</button>'+
+      '<button onclick="printAll()">🖨 すべて印刷</button>'+
       '<button onclick="window.close()">✕ 閉じる</button>'+
-      '<div class="sub">各QRを読み取ると、その精算者専用の申請フォームが開きます（精算者の変更はできません）</div>'+
+      '<div class="sub">各QRを読み取ると、その精算者専用の申請フォームが開きます（精算者の変更はできません）<br>1ページに6つ並びます。グループごとに分けて印刷できます。</div>'+
     '</div>'+
-    '<div class="qr-grid">'+cards+'</div>'+
+    sections +
+    '<script>'+
+    'function printAll(){document.body.className="";window.print();}'+
+    'function printGroup(cls){document.body.className="print-"+cls;setTimeout(function(){window.print();},50);}'+
+    'window.onafterprint=function(){document.body.className="";};'+
+    '<\/script>'+
     '</body></html>';
 
   var win = window.open('', '_blank');
