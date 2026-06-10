@@ -1164,6 +1164,7 @@ function showAllForms(person){
     var invFlag = d.invoice_number ? '' :
       '<div style="background:#fef3c7;color:#b45309;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:600;margin-bottom:10px;display:inline-block">\u26a0 \u30a4\u30f3\u30dc\u30a4\u30b9\u756a\u53f7\u306f\u4e8b\u52d9\u6240\u3067\u78ba\u8a8d\u3057\u307e\u3059</div>';
 
+  
     // \u660e\u7d30\u4fee\u6b63\u7528\uff08\u6298\u308a\u305f\u305f\u307f\uff09
     var editRows = items.map(function(it,i){
       var ac = gac(it.name, d.store_name);
@@ -1171,16 +1172,15 @@ function showAllForms(person){
       var tx = ['10%\u6a19\u6e96','8%\u8efd\u6e1b','\u975e\u8ab2\u7a0e','\u4e0d\u8ab2\u7a0e'].map(function(t){return '<option'+(t===it.tax_category?' selected':'')+'>'+t+'</option>';}).join('');
       return '<div class="irow" id="r'+ri+'irow'+i+'">'+
         '<input type="text" id="r'+ri+'nm'+i+'" value="'+(it.name||'').replace(/"/g,'&quot;')+'" placeholder="\u54c1\u76ee\u540d" style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;margin-bottom:6px"/>'+
-        '<select id="r'+ri+'ac'+i+'" style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;margin-bottom:6px">'+opts+'</select>'+
-       '<div style="display:flex;gap:6px;margin-bottom:6px">'+
-'<select id="r'+ri+'tx'+i+'" style="flex:1;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit">'+tx+'</select>'+
-'<input type="number" id="r'+ri+'am'+i+'" value="'+it.amount+'" oninput="recalcTotB('+ri+')" style="width:110px;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;text-align:right"/>'+
-'</div>'+
-'<select id="r'+ri+'ac'+i+'" style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit">'+opts+'</select>'+
+        '<div style="display:flex;gap:6px;margin-bottom:6px">'+
+        '<select id="r'+ri+'tx'+i+'" style="flex:1;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit">'+tx+'</select>'+
+        '<input type="number" id="r'+ri+'am'+i+'" value="'+it.amount+'" oninput="recalcTotB('+ri+')" style="width:110px;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;text-align:right"/>'+
+        '</div>'+
         '<select id="r'+ri+'ac'+i+'" style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit">'+opts+'</select>'+
         '<button type="button" onclick="removeItemB('+ri+','+i+')" style="background:none;border:none;color:#dc2626;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;padding:6px 0 0;display:block">\u2715 この品目を申請から除く</button>'+
         '</div>';
     }).join('');
+
 
     card.innerHTML =
       '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">'+
