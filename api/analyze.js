@@ -30,7 +30,7 @@ export default async function handler(req, res) {
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-5',
+        model: 'claude-opus-4-8',
         max_tokens: 1024,
         messages: [{
           role: 'user',
@@ -55,13 +55,15 @@ export default async function handler(req, res) {
     - 重量税・自動車税・軽自動車税・印紙税などの税金 → 「不課税」
     - 新聞の定期購読料 → 「8%軽減」
   ・上記に当てはまらない場合はマークで判定：「※」「★」「軽」「#」マークがあれば「8%軽減」、なければ「10%標準」
-- invoice_numberは「T」で始まる13桁の番号。レシートの隅・左下・欄外・薄い小さな文字でも必ず探して読み取る。鉄道（JR東日本など）・交通機関・タクシーのレシートは登録番号が左下や下部に薄く小さく印字されることが多いので特に注意して探す。どうしても読み取れない場合のみnull
+- invoice_numberは「T」で始まり数字13桁が続く番号（例：T2010001098023）。レシートの隅・左下・欄外・薄い小さな文字でも必ず探して読み取る。
+  ・スーパー・量販店（イトーヨーカドー、西友など）の領収証は、登録番号が「登録番号 T〜」の形で、レシート下部や側面に【縦書き】【90度回転した向き】で薄く印字されていることが非常に多い。画像を回転させてでも、縦書き・横倒しのテキスト領域を必ず確認すること。
+  ・「登録番号」「適格」「インボイス」などの語の近くを重点的に探す。
+  ・数字が13桁あるか必ず数えて確認する。読めた番号が「T＋13桁」でない場合は、桁を読み直す。
+  ・鉄道・交通機関・タクシーのレシートも左下や下部に薄く小さく印字されることが多い。
+  ・どうしても読み取れない場合のみnull。
 - invoice_statusは、invoice_numberがあれば「適格」、なければ「要確認」
 - dateはYYYY-MM-DD形式（令和8年=2026年、令和7年=2025年）
 - totalは税込の実際の支払合計金額（「合計」「お会計」欄の金額）
-- tax_8：レシートに記載された8%消費税額。「外税額 8%」「消費税8%」「内消費税等8%」どの形式でも必ず読み取る。なければnull
-- tax_10：レシートに記載された10%消費税額。同様に必ず読み取る。なければnull
-- tax_8 / tax_10 は必ずレシートに印字されている金額をそのまま使う。自分で計算し直さない。端数処理の結果レシート上で「¥0」と印字されている場合は 0 とする（例：税率10%対象額¥3で内消費税等10%が¥0なら tax_10 は 0）
 - car_number：自賠責保険・自動車保険の領収証の場合、「自動車登録番号」「車両番号」（例：市川400 さ 62）を読み取る。それ以外のレシートや読み取れない場合は null
 - accountは以下のルールで判定する：
   ・店名や品目に「駐車場」「パーキング」→「駐車代」
@@ -72,6 +74,28 @@ export default async function handler(req, res) {
   ・「ティッシュ」「トイレ」「洗剤」「作業着」「手袋」「軍手」→「消耗品」
   ・「自賠責」→「自賠責保険代」
   ・上記以外→「雑費」
+
+【tax_summaryの読み取りルール】
+tax_summaryはレシートの集計欄から8%・10%それぞれについて以下を読み取る。
+各税率について独立して判定すること（片方が内税、もう片方が外税の混在も正確に捉える）。
+
+taxable_amount（税込対象額）：
+- 「8%対象」「10%対象」「軽減税率対象」などの行があればその金額を使う
+- 印字された金額が税抜表示（外税）の場合は税込に換算する（8%なら×1.08、10%なら×1.10）
+- 印字がなければ items の該当tax_categoryの合計から算出する
+- 小数点以下は切り捨て
+
+tax_amount（税額）：
+- 「内消費税等 8%」「外税額 8%」など印字があればその金額をそのまま使う
+- 印字がなければ taxable_amount から逆算する（内税なら taxable_amount × 8/108、外税なら taxable_amount × 8/100）
+- 小数点以下は切り捨て
+
+is_inclusive（内税かどうか）：
+- 「内消費税等」「うち消費税」「内税」→ true
+- 「外税額」「別途消費税」「外税」→ false
+- 明記なし → true（日本の小売レシートは内税が原則）
+
+該当する税率の取引が存在しない場合はそのキー自体をnullにする。
 
 【複数レシートの対応】
 - 1枚の画像に複数のレシート・領収書が写っている場合は、それぞれを別々のレシートとして認識し、receipts配列に複数の要素として返す。
@@ -89,7 +113,7 @@ export default async function handler(req, res) {
 - 「メーター運賃」「運賃」「乗車」「ご乗車」「TAXI」「タクシー」「ハイヤー」「交通」などの語、またはタクシー会社・交通事業者名（〇〇交通、〇〇タクシー、〇〇ハイヤー等）が店名・品目にあれば account を「タクシー代」にする。
 
 次のJSON形式のみで返す（説明不要）。必ずreceipts配列の形にする：
-{"receipts":[{"store_name":"店名","invoice_number":"T+13桁またはnull","invoice_status":"適格または要確認","date":"YYYY-MM-DD","car_number":"自動車登録番号またはnull","items":[{"name":"印字文字そのまま","amount":数値(値引きは必ず負の数),"tax_category":"10%標準または8%軽減または非課税または不課税","account":"駐車代/タクシー代/飲料代/飲食代/消耗品/自賠責保険代/雑費のいずれか"}],"tax_8":数値またはnull,"tax_10":数値またはnull,"total":数値}]}` }
+{"receipts":[{"store_name":"店名","invoice_number":"T+13桁またはnull","invoice_status":"適格または要確認","date":"YYYY-MM-DD","car_number":"自動車登録番号またはnull","items":[{"name":"印字文字そのまま","amount":数値(値引きは必ず負の数),"tax_category":"10%標準または8%軽減または非課税または不課税","account":"駐車代/タクシー代/飲料代/飲食代/消耗品/自賠責保険代/雑費のいずれか"}],"tax_summary":{"8":{"taxable_amount":税込対象額または null,"tax_amount":税額または null,"is_inclusive":trueまたはfalse}または null,"10":{"taxable_amount":税込対象額または null,"tax_amount":税額または null,"is_inclusive":trueまたはfalse}または null},"total":数値}]}` }
           ]
         }]
       })
@@ -142,6 +166,7 @@ export default async function handler(req, res) {
     const discountPattern = /割引|値引|クーポン|ポイント|code\d+|discount/i;
 
     receipts = receipts.map(rcpt => {
+      // items の正規化
       if (Array.isArray(rcpt.items)) {
         let items = rcpt.items.map(item => {
           const amount = Number(item.amount) || 0;
@@ -162,6 +187,10 @@ export default async function handler(req, res) {
           account: validAccounts.includes(item.account) ? item.account : '雑費'
         }));
       }
+
+      // tax_summary の正規化・フォールバック計算
+      rcpt.tax_summary = normalizeTaxSummary(rcpt.tax_summary, rcpt.items);
+
       return rcpt;
     });
 
@@ -171,6 +200,70 @@ export default async function handler(req, res) {
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
+}
+
+// tax_summary を正規化し、不足分をitemsから補完する
+function normalizeTaxSummary(summary, items) {
+  const rates = { '8': { multiplier: 1.08, fraction: 8 / 108 }, '10': { multiplier: 1.10, fraction: 10 / 110 } };
+  const result = {};
+
+  for (const [rateKey, { multiplier, fraction }] of Object.entries(rates)) {
+    const taxCategory = rateKey === '8' ? '8%軽減' : '10%標準';
+    const src = summary?.[rateKey];
+
+    // items から該当税率の税込合計を算出（フォールバック用）
+    const itemsTotal = Array.isArray(items)
+      ? items
+          .filter(i => i.tax_category === taxCategory && Number(i.amount) > 0)
+          .reduce((sum, i) => sum + Number(i.amount), 0)
+      : 0;
+
+    // 該当税率の品目が存在しない かつ summaryにも記載なし → null
+    if (!src && itemsTotal === 0) {
+      result[rateKey] = null;
+      continue;
+    }
+
+    const isInclusive = src?.is_inclusive !== false; // 明記なしはtrue
+
+    let taxableAmount = src?.taxable_amount != null ? Number(src.taxable_amount) : null;
+    let taxAmount = src?.tax_amount != null ? Number(src.tax_amount) : null;
+
+    // taxable_amountが税抜で渡されてきた場合は税込に換算（外税の場合）
+    // ※プロンプトで税込に換算するよう指示済みだが念のため
+    // isInclusiveがfalseかつtaxAmountが既知なら taxableAmount = taxableAmount（外税印字額）+ taxAmount
+    if (!isInclusive && taxableAmount != null && taxAmount != null) {
+      // 外税の場合、印字されている対象額が税抜なら税込に直す
+      // すでに税込として返ってきていれば二重加算を避けるため、
+      // taxableAmount > taxableAmount * 0.99 のチェックは不要（プロンプト側で統一済み）
+      // ここでは念のため: taxable_amount が税抜っぽい（tax抜 × rate ≒ taxAmount）なら補正
+      const impliedTax = Math.floor(taxableAmount * (rateKey === '8' ? 8 / 100 : 10 / 100));
+      if (Math.abs(impliedTax - taxAmount) <= 2) {
+        // 税抜金額として渡ってきていると判断 → 税込に換算
+        taxableAmount = taxableAmount + taxAmount;
+      }
+    }
+
+    // フォールバック: taxable_amount がなければ items 合計を使う
+    if (taxableAmount == null || taxableAmount === 0) {
+      taxableAmount = itemsTotal || null;
+    }
+
+    // tax_amount を逆算（印字がない場合）
+    if (taxAmount == null && taxableAmount != null) {
+      taxAmount = isInclusive
+        ? Math.floor(taxableAmount * fraction)
+        : Math.floor(taxableAmount * (rateKey === '8' ? 8 / 100 : 10 / 100));
+    }
+
+    result[rateKey] = {
+      taxable_amount: taxableAmount,
+      tax_amount: taxAmount,
+      is_inclusive: isInclusive
+    };
+  }
+
+  return result;
 }
 
 function repairJSON(str) {
