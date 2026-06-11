@@ -1146,6 +1146,12 @@ function onTaxCatChange(ri){
   var est = calcTaxFromItems(items);
   r.data.tax_8 = est.tax8;
   r.data.tax_10 = est.tax10;
+  // tax_summaryも更新
+  var sum8  = items.filter(function(it){ return it.tax_category === '8%軽減';  }).reduce(function(s,it){ return s+it.amount; }, 0);
+  var sum10 = items.filter(function(it){ return it.tax_category === '10%標準'; }).reduce(function(s,it){ return s+it.amount; }, 0);
+  if(!r.data.tax_summary) r.data.tax_summary = {};
+  r.data.tax_summary['8']  = sum8  > 0 ? { taxable_amount: sum8,  tax_amount: est.tax8,  is_inclusive: true } : null;
+  r.data.tax_summary['10'] = sum10 > 0 ? { taxable_amount: sum10, tax_amount: est.tax10, is_inclusive: true } : null;
   // グレーアウトのサマリー表示を更新（消費税の8%/10%表示もここで反映される）
   refreshSummaryB(ri, items, est.total);
   // 合計ラベル（税込/非課税/不課税）を更新
@@ -1331,40 +1337,59 @@ function applyDetailB(ri){
   if(ivEl && ivH) ivH.value = ivEl.value;
   if(carEl && carH) carH.value = carEl.value;
 
-  // 消費税額の手動修正値をRECEIPTS[ri].dataに反映
-  // ルール：8%/10%の内訳に値があればそれを優先。内訳が空で合計欄だけ入っていれば、
-  //         品目の税区分から自動判定（軽減税率の品目があれば8%へ、なければ10%へ）
-  var t8El  = document.getElementById('r'+ri+'tax8edit');
-  var t10El = document.getElementById('r'+ri+'tax10edit');
-  var ttEl  = document.getElementById('r'+ri+'taxtotal');
-  if(RECEIPTS[ri] && RECEIPTS[ri].data){
-    var has8  = t8El  && t8El.value  !== '';
-    var has10 = t10El && t10El.value !== '';
-    if(has8 || has10){
-      // 内訳優先
-      RECEIPTS[ri].data.tax_8  = has8  ? (Number(t8El.value)  || 0) : 0;
-      RECEIPTS[ri].data.tax_10 = has10 ? (Number(t10El.value) || 0) : 0;
-    } else if(ttEl && ttEl.value !== ''){
-      // 合計欄のみ：品目に8%軽減があるか見て振り分ける
-      var totalTax = Number(ttEl.value) || 0;
-      var hasReduced = false;
-      var j = 0;
-      while(true){
-        var txEl = document.getElementById('r'+ri+'tx'+j);
-        var amEl = document.getElementById('r'+ri+'am'+j);
-        if(!amEl) break;
-        if(amEl.getAttribute('data-removed') !== '1' && txEl && txEl.value === '8%軽減') hasReduced = true;
-        j++;
-      }
-      if(hasReduced){
-        // 軽減品目があるなら合計を8%扱い（混在は内訳入力を促す運用）
-        RECEIPTS[ri].data.tax_8  = totalTax;
-        RECEIPTS[ri].data.tax_10 = 0;
-      } else {
-        RECEIPTS[ri].data.tax_8  = 0;
-        RECEIPTS[ri].data.tax_10 = totalTax;
-      }
+  // ★インボイス番号の画面表示を更新
+  var invDisp = document.getElementById('r'+ri+'invnumdisp');
+  if(invDisp && ivEl){
+    var newInv = ivEl.value.trim();
+    invDisp.textContent = newInv || '登録番号なし';
+    invDisp.style.color = newInv ? '#374151' : '#9ca3af';
+    // _invstも再評価（番号を消したら「無」にする）
+    if(RECEIPTS[ri]){
+      RECEIPTS[ri]._invst = newInv ? 'yes' : 'no';
+      setInvStatus(ri, RECEIPTS[ri]._invst);
     }
+    // dataにも保存
+    if(RECEIPTS[ri] && RECEIPTS[ri].data) RECEIPTS[ri].data.invoice_number = newInv || null;
+  }
+
+  // 対象額（税込）の手動修正値をRECEIPTS[ri].dataに反映
+  // 8%・10%それぞれ独立。入力があれば上書き、空なら品目から逆算する
+  if(RECEIPTS[ri] && RECEIPTS[ri].data){
+    var ta8El  = document.getElementById('r'+ri+'taxable8edit');
+    var ta10El = document.getElementById('r'+ri+'taxable10edit');
+    var items_now = [];
+    var jj = 0;
+    while(true){
+      var amElJ = document.getElementById('r'+ri+'am'+jj);
+      var txElJ = document.getElementById('r'+ri+'tx'+jj);
+      if(!amElJ) break;
+      if(amElJ.getAttribute('data-removed') !== '1'){
+        items_now.push({ amount: parseInt(amElJ.value,10)||0, tax_category: txElJ ? txElJ.value : '10%標準' });
+      }
+      jj++;
+    }
+    var sum8now  = items_now.filter(function(it){ return it.tax_category === '8%軽減';  }).reduce(function(s,it){ return s+it.amount; }, 0);
+    var sum10now = items_now.filter(function(it){ return it.tax_category === '10%標準'; }).reduce(function(s,it){ return s+it.amount; }, 0);
+
+    // 対象額（税込）：入力があればそれを使う。空なら品目合計（内税想定）
+    var taxable8  = (ta8El  && ta8El.value  !== '') ? (Number(ta8El.value)  || 0) : sum8now;
+    var taxable10 = (ta10El && ta10El.value !== '') ? (Number(ta10El.value) || 0) : sum10now;
+
+    // 内外税の選択（8%・10%独立）
+    var isIn8  = document.getElementById('r'+ri+'tin8')  ? document.getElementById('r'+ri+'tin8').checked  : true;
+    var isIn10 = document.getElementById('r'+ri+'tin10') ? document.getElementById('r'+ri+'tin10').checked : true;
+
+    // 税額を逆算
+    var tax8  = isIn8  ? Math.floor(taxable8  * 8  / 108) : Math.floor(taxable8  * 8  / 100);
+    var tax10 = isIn10 ? Math.floor(taxable10 * 10 / 110) : Math.floor(taxable10 * 10 / 100);
+
+    RECEIPTS[ri].data.tax_8  = (sum8now  > 0 || (ta8El  && ta8El.value  !== '')) ? tax8  : null;
+    RECEIPTS[ri].data.tax_10 = (sum10now > 0 || (ta10El && ta10El.value !== '')) ? tax10 : null;
+
+    // tax_summaryも更新
+    if(!RECEIPTS[ri].data.tax_summary) RECEIPTS[ri].data.tax_summary = {};
+    RECEIPTS[ri].data.tax_summary['8']  = (sum8now  > 0 || (ta8El  && ta8El.value  !== '')) ? { taxable_amount: taxable8,  tax_amount: tax8,  is_inclusive: isIn8  } : null;
+    RECEIPTS[ri].data.tax_summary['10'] = (sum10now > 0 || (ta10El && ta10El.value !== '')) ? { taxable_amount: taxable10, tax_amount: tax10, is_inclusive: isIn10 } : null;
   }
 
   // カード上部の表示テキストを書き換え
@@ -1450,22 +1475,28 @@ function applyDetailB(ri){
 
   // 合計・ラベル・警告を再計算
   recalcTotB(ri);
-  // 明細を閉じる
+  // 明細を閉じる（スクロール位置を保持してから閉じる）
   var detailEl = document.getElementById('r'+ri+'detail');
-  if(detailEl) detailEl.style.display = 'none';
+  if(detailEl){
+    // 閉じるとページ高さが縮むので、カード上部が見える位置を維持する
+    var card3 = detailEl.closest ? detailEl.closest('.card') : null;
+    var keepY = card3 ? (window.pageYOffset + card3.getBoundingClientRect().top - 70) : window.pageYOffset;
+    detailEl.style.display = 'none';
+    window.scrollTo({ top: Math.max(0, keepY), behavior: 'instant' });
+  }
 
   // 反映完了フラッシュ
   var btn = event && event.target ? event.target : null;
-  if(btn){
+  if(btn && document.body.contains(btn)){
     var origText = btn.textContent;
     var origBg   = btn.style.background;
     btn.textContent = '✓ 反映しました';
     btn.style.background = '#0f766e';
-    setTimeout(function(){ btn.textContent = origText; btn.style.background = origBg; }, 1200);
+    setTimeout(function(){ if(document.body.contains(btn)){ btn.textContent = origText; btn.style.background = origBg; } }, 1200);
   }
 }
 
-// 【7】消費税額の自動計算（品目の税区分・金額から内税方式で計算してinputに反映）
+// 【7】対象額の自動計算（品目の税区分・金額から内税方式で計算してinputに反映）
 function calcTaxAuto(ri, rate){
   var r = RECEIPTS[ri];
   if(!r) return;
@@ -1480,25 +1511,15 @@ function calcTaxAuto(ri, rate){
     }
     i++;
   }
-  if(rate === 0){
-    // 消費税合計の自動計算（全品目から税率ごとに内税計算して合算）
+  if(rate === 8 || rate === 0){
     var s8 = items.filter(function(it){ return it.tax_category === '8%軽減'; }).reduce(function(s,it){ return s + it.amount; }, 0);
+    var el8 = document.getElementById('r'+ri+'taxable8edit');
+    if(el8 && s8 > 0){ el8.value = s8; el8.style.borderColor = '#16a34a'; setTimeout(function(){ el8.style.borderColor=''; }, 1500); }
+  }
+  if(rate === 10 || rate === 0){
     var s10 = items.filter(function(it){ return it.tax_category === '10%標準'; }).reduce(function(s,it){ return s + it.amount; }, 0);
-    var t = Math.floor(s8 * 8 / 108) + Math.floor(s10 * 10 / 110);
-    var elT = document.getElementById('r'+ri+'taxtotal');
-    if(elT){ elT.value = t; elT.style.borderColor = '#16a34a'; setTimeout(function(){ elT.style.borderColor='#fcd34d'; }, 1500); }
-  } else if(rate === 8){
-    var sum8 = items.filter(function(it){ return it.tax_category === '8%軽減'; })
-                    .reduce(function(s,it){ return s + it.amount; }, 0);
-    var tax8 = Math.floor(sum8 * 8 / 108);
-    var el8 = document.getElementById('r'+ri+'tax8edit');
-    if(el8){ el8.value = tax8; el8.style.borderColor = '#16a34a'; setTimeout(function(){ el8.style.borderColor=''; }, 1500); }
-  } else {
-    var sum10 = items.filter(function(it){ return it.tax_category === '10%標準'; })
-                     .reduce(function(s,it){ return s + it.amount; }, 0);
-    var tax10 = Math.floor(sum10 * 10 / 110);
-    var el10 = document.getElementById('r'+ri+'tax10edit');
-    if(el10){ el10.value = tax10; el10.style.borderColor = '#16a34a'; setTimeout(function(){ el10.style.borderColor=''; }, 1500); }
+    var el10 = document.getElementById('r'+ri+'taxable10edit');
+    if(el10 && s10 > 0){ el10.value = s10; el10.style.borderColor = '#16a34a'; setTimeout(function(){ el10.style.borderColor=''; }, 1500); }
   }
 }
 
@@ -1891,26 +1912,40 @@ function showAllForms(person){
         '<input type="text" id="r'+ri+'date" value="'+(d.date||today())+'" placeholder="\u53d6\u5f15\u65e5 YYYY-MM-DD" style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;margin-bottom:6px"/>'+
         '<input type="text" id="r'+ri+'inv" value="'+(d.invoice_number||'').replace(/"/g,'&quot;')+'" placeholder="\u30a4\u30f3\u30dc\u30a4\u30b9\u756a\u53f7 T..." style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;margin-bottom:6px"/>'+
         '<input type="text" id="r'+ri+'car" value="'+(d.car_number||'').replace(/"/g,'&quot;')+'" placeholder="\u8eca\u756a\uff08\u81ea\u52d5\u8eca\u4fdd\u967a\u7b49\u306e\u5834\u5408\uff09" style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;margin-bottom:10px"/>'+
-        // 【消費税合計】まずここを直せばOK。軽減税率混在のときだけ下の8%/10%内訳を使う
-        '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 12px;margin-bottom:10px">'+
-          '<div style="font-size:12px;font-weight:700;color:#b45309;margin-bottom:8px">🧾 消費税額の修正（AIが誤読した場合のみ）</div>'+
-          '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">'+
-            '<label style="font-size:12px;color:#b45309;margin:0;width:90px;flex-shrink:0;font-weight:700">消費税 合計</label>'+
-            '<input type="number" id="r'+ri+'taxtotal" value="" placeholder="'+(((Number(d.tax_8)||0)+(Number(d.tax_10)||0))||'未読取')+'" min="0" style="flex:1;padding:7px;font-size:15px;border:1.5px solid #fcd34d;border-radius:6px;font-family:inherit;font-weight:700"/>'+
-          '</div>'+
-          '<div style="font-size:10px;color:#b45309;margin-bottom:8px;line-height:1.4">通常はこの「合計」だけ直せばOKです。軽減税率（8%）が混在する場合のみ、下の内訳に分けて入力してください。</div>'+
-          '<div style="border-top:1px dashed #fcd34d;padding-top:8px">'+
-          '<div style="font-size:11px;color:#92400e;margin-bottom:6px">▼ 8%・10%の内訳（混在レシートのみ・入力すると合計より優先）</div>'+
-          '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">'+
-            '<label style="font-size:12px;color:#6b7280;margin:0;width:90px;flex-shrink:0">8%消費税額</label>'+
-            '<input type="number" id="r'+ri+'tax8edit" value="" placeholder="'+(d.tax_8!=null?d.tax_8:'未読取')+'" min="0" style="flex:1;padding:7px;font-size:15px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit"/>'+
-          '</div>'+
-          '<div style="display:flex;gap:8px;align-items:center">'+
-            '<label style="font-size:12px;color:#6b7280;margin:0;width:90px;flex-shrink:0">10%消費税額</label>'+
-            '<input type="number" id="r'+ri+'tax10edit" value="" placeholder="'+(d.tax_10!=null?d.tax_10:'未読取')+'" min="0" style="flex:1;padding:7px;font-size:15px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit"/>'+
-          '</div>'+
-          '</div>'+
-        '</div>'+
+        // 消費税の対象額・内外税の修正欄（8%・10%独立）
+        (function(){
+          var ts = d.tax_summary || {};
+          var t8  = ts['8']  || null;
+          var t10 = ts['10'] || null;
+          // 初期値：tax_summaryがあればそこから。なければ品目合計＋内税デフォルト
+          var init8taxable  = t8  ? (t8.taxable_amount  != null ? t8.taxable_amount  : '') : '';
+          var init10taxable = t10 ? (t10.taxable_amount != null ? t10.taxable_amount : '') : '';
+          var init8in  = t8  ? (t8.is_inclusive  !== false) : true;
+          var init10in = t10 ? (t10.is_inclusive !== false) : true;
+          var ph8  = init8taxable  !== '' ? init8taxable  : (function(){ var s=(d.items||[]).filter(function(it){return it.tax_category==='8%軽減';}).reduce(function(a,it){return a+(Number(it.amount)||0);},0); return s||''; })();
+          var ph10 = init10taxable !== '' ? init10taxable : (function(){ var s=(d.items||[]).filter(function(it){return it.tax_category==='10%標準';}).reduce(function(a,it){return a+(Number(it.amount)||0);},0); return s||''; })();
+          return '<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px 12px;margin-bottom:10px">'+
+            '<div style="font-size:12px;font-weight:700;color:#0369a1;margin-bottom:8px">🧾 消費税の修正（AIが誤読した場合のみ）</div>'+
+            // 8%行
+            '<div style="display:grid;grid-template-columns:80px 1fr auto;gap:6px;align-items:center;margin-bottom:8px">'+
+              '<span style="font-size:12px;font-weight:700;color:#16a34a">8%対象額</span>'+
+              '<input type="number" id="r'+ri+'taxable8edit" value="'+init8taxable+'" placeholder="'+(ph8||'(品目から自動)')+'" min="0" style="padding:7px;font-size:15px;border:1px solid #bae6fd;border-radius:6px;font-family:inherit"/>'+
+              '<div style="display:flex;border:1px solid #d1d5db;border-radius:6px;overflow:hidden;flex-shrink:0">'+
+                '<label style="display:flex;align-items:center;gap:3px;padding:5px 8px;font-size:11px;font-weight:700;cursor:pointer;background:'+(init8in?'#f0fdf4':'#fff')+';color:'+(init8in?'#16a34a':'#6b7280')+'"><input type="radio" id="r'+ri+'tin8" name="r'+ri+'ttype8" value="in" '+(init8in?'checked':'')+' onchange="(function(){document.getElementById(\'r'+ri+'tin8\').closest(\'.card\')||document.body})()" style="margin:0"/>内税</label>'+
+                '<label style="display:flex;align-items:center;gap:3px;padding:5px 8px;font-size:11px;font-weight:700;cursor:pointer;border-left:1px solid #d1d5db;background:'+(!init8in?'#f0fdf4':'#fff')+';color:'+(!init8in?'#16a34a':'#6b7280')+'"><input type="radio" id="r'+ri+'tex8" name="r'+ri+'ttype8" value="ex" '+(!init8in?'checked':'')+' style="margin:0"/>外税</label>'+
+              '</div>'+
+            '</div>'+
+            // 10%行
+            '<div style="display:grid;grid-template-columns:80px 1fr auto;gap:6px;align-items:center">'+
+              '<span style="font-size:12px;font-weight:700;color:#2563eb">10%対象額</span>'+
+              '<input type="number" id="r'+ri+'taxable10edit" value="'+init10taxable+'" placeholder="'+(ph10||'(品目から自動)')+'" min="0" style="padding:7px;font-size:15px;border:1px solid #bae6fd;border-radius:6px;font-family:inherit"/>'+
+              '<div style="display:flex;border:1px solid #d1d5db;border-radius:6px;overflow:hidden;flex-shrink:0">'+
+                '<label style="display:flex;align-items:center;gap:3px;padding:5px 8px;font-size:11px;font-weight:700;cursor:pointer;background:'+(init10in?'#f0fdf4':'#fff')+';color:'+(init10in?'#16a34a':'#6b7280')+'"><input type="radio" id="r'+ri+'tin10" name="r'+ri+'ttype10" value="in" '+(init10in?'checked':'')+' style="margin:0"/>内税</label>'+
+                '<label style="display:flex;align-items:center;gap:3px;padding:5px 8px;font-size:11px;font-weight:700;cursor:pointer;border-left:1px solid #d1d5db;background:'+(!init10in?'#f0fdf4':'#fff')+';color:'+(!init10in?'#16a34a':'#6b7280')+'"><input type="radio" id="r'+ri+'tex10" name="r'+ri+'ttype10" value="ex" '+(!init10in?'checked':'')+' style="margin:0"/>外税</label>'+
+              '</div>'+
+            '</div>'+
+          '</div>';
+        })()+
         '<div style="font-size:12px;color:#9ca3af;margin-bottom:6px">\u660e\u7d30</div>'+
         '<div id="r'+ri+'itemwrap">'+editRows+'</div>'+
         '<button type="button" onclick="addItemB('+ri+')" style="display:block;width:100%;margin-top:8px;padding:9px;background:#fff;border:1.5px dashed #16a34a;border-radius:8px;color:#16a34a;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">\uff0b 品目を追加</button>'+
@@ -2063,6 +2098,7 @@ function showAllForms(person){
         use:useVal,
         items:items,
         tax_8:d.tax_8, tax_10:d.tax_10,
+        tax_summary: d.tax_summary || null,
         car_number: car || d.car_number || null,
         total:rTotal,
         b64:r.b64, mime:r.mime
