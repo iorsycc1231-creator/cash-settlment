@@ -681,11 +681,11 @@ function setFilter(f){
 var RECEIPTS = [];
 var CURRENT_PERSON = '';
 
-function showUpload(){
+function showUpload(keepReceipts){
   // ローディング画面を非表示
   var ls = $e('loading-screen');
   if(ls) ls.style.display = 'none';
-  RECEIPTS = [];
+  if(!keepReceipts){ RECEIPTS = []; }
   var el = $e('area');
   el.innerHTML = '';
 
@@ -945,11 +945,13 @@ function toggleDetailB(ri){
   // 開いたとき：そのレシートのカード上部が見える位置に静かにスクロール
   if(willOpen){
     setTimeout(function(){
-      // 詳細エリアではなく、レシートカードの先頭（用途や合計が見える位置）に合わせる
       var card = d.closest ? d.closest('.card') : null;
       var target = card || d;
-      if(target && target.scrollIntoView){
-        target.scrollIntoView({behavior:'smooth', block:'start'});
+      if(target){
+        // ヘッダー分の余白を取って、カード先頭が画面上部に来るようにスクロール
+        var rect = target.getBoundingClientRect();
+        var y = window.pageYOffset + rect.top - 70;
+        window.scrollTo({ top: y, behavior: 'smooth' });
       }
     }, 30);
   }
@@ -1066,10 +1068,10 @@ function addItemB(ri){
   div.innerHTML =
     '<input type="text" id="r'+ri+'nm'+i+'" value="" placeholder="品目名" style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;margin-bottom:6px"/>'+
     '<div style="display:flex;gap:6px;margin-bottom:6px">'+
-    '<select id="r'+ri+'tx'+i+'" style="flex:1;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit">'+tx+'</select>'+
+    '<select id="r'+ri+'tx'+i+'" onchange="onTaxCatChange('+ri+')" style="flex:1;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit">'+tx+'</select>'+
     '<input type="number" id="r'+ri+'am'+i+'" value="0" oninput="recalcTotB('+ri+')" style="width:110px;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;text-align:right"/>'+
     '</div>'+
-    '<select id="r'+ri+'ac'+i+'" style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit">'+opts+'</select>'+
+    '<select id="r'+ri+'ac'+i+'" onchange="onItemAccountChange('+ri+')" style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit">'+opts+'</select>'+
     '<button type="button" onclick="removeItemB('+ri+','+i+')" style="background:none;border:none;color:#dc2626;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;padding:6px 0 0;display:block">\u2715 この品目を申請から除く</button>';
   wrap.appendChild(div);
   // 追加した品目名にフォーカス
@@ -1098,6 +1100,164 @@ function recalcTotB(ri){
   if(totEl) totEl.textContent='¥'+fmt(shownTotal);
   updateTotLabelB(ri);
   checkWarnB(ri);
+  updateGrandTotalDisp();
+}
+
+// 全レシート合計バナーを、各レシートの現在の表示合計から再計算して更新
+function updateGrandTotalDisp(){
+  var disp = document.getElementById('grandTotalDisp');
+  if(!disp) return;
+  var sum = 0;
+  for(var ri=0; ri<RECEIPTS.length; ri++){
+    var totEl = document.getElementById('r'+ri+'tot');
+    if(totEl){
+      // 表示中の合計テキスト「¥12,345」から数値を取り出す
+      var v = parseInt(String(totEl.textContent).replace(/[^0-9-]/g,''),10);
+      if(!isNaN(v)) sum += v;
+    } else if(RECEIPTS[ri] && RECEIPTS[ri].data){
+      sum += Number(RECEIPTS[ri].data.total)||0;
+    }
+  }
+  disp.textContent = '¥'+fmt(sum);
+}
+
+// 明細の税区分が変わったときの一括更新（消費税の再計算・サマリー・ラベル・インボイス表示）
+function onTaxCatChange(ri){
+  var r = RECEIPTS[ri];
+  if(!r || !r.data) return;
+  // 現在の明細から品目を集めて消費税を内税逆算し直す
+  var items = [];
+  var i = 0;
+  while(true){
+    var nmEl = document.getElementById('r'+ri+'nm'+i);
+    var amEl = document.getElementById('r'+ri+'am'+i);
+    var txEl = document.getElementById('r'+ri+'tx'+i);
+    if(!amEl) break;
+    if(amEl.getAttribute('data-removed') !== '1'){
+      items.push({
+        name: nmEl?nmEl.value:'',
+        amount: parseInt(amEl.value,10)||0,
+        tax_category: txEl?txEl.value:'10%標準'
+      });
+    }
+    i++;
+  }
+  // 内税方式で8%・10%を逆算してdataに反映
+  var est = calcTaxFromItems(items);
+  r.data.tax_8 = est.tax8;
+  r.data.tax_10 = est.tax10;
+  // グレーアウトのサマリー表示を更新（消費税の8%/10%表示もここで反映される）
+  refreshSummaryB(ri, items, est.total);
+  // 合計ラベル（税込/非課税/不課税）を更新
+  updateTotLabelB(ri);
+  // インボイス表示の出し分け（非課税・不課税のみなら隠す）
+  updateInvoiceVisB(ri, items);
+  recalcTotB(ri);
+}
+
+// グレーアウトの品目サマリーを現在の明細から作り直す（消費税行も含む）
+function refreshSummaryB(ri, items, taxTotal){
+  var summaryEl = document.getElementById('r'+ri+'summary');
+  if(!summaryEl) return;
+  var list = items.map(function(it){
+    var t8 = (it.tax_category && it.tax_category.indexOf('8%')>=0) ? '<span style="color:#16a34a;font-size:10px;margin-left:4px">8%</span>' : '';
+    var t10 = (it.tax_category === '10%標準') ? '<span style="color:#2563eb;font-size:10px;margin-left:4px">10%</span>' : '';
+    var nonTax = (it.tax_category === '非課税' || it.tax_category === '不課税')
+      ? '<span style="color:#9ca3af;font-size:10px;margin-left:4px">'+it.tax_category+'</span>' : '';
+    var amtColor = (it.amount < 0) ? '#dc2626' : '#9ca3af';
+    return '<div style="display:flex;justify-content:space-between;font-size:12px;color:#6b7280;padding:3px 0">'+
+      '<span style="flex:1">'+(it.name||'(品目)')+t8+t10+nonTax+'</span>'+
+      '<span style="color:'+amtColor+';margin-left:8px">¥'+fmt(it.amount)+'</span></div>';
+  }).join('');
+  if(taxTotal > 0){
+    list += '<div style="display:flex;justify-content:space-between;font-size:12px;color:#9ca3af;padding:3px 0;border-top:1px dashed #e5e7eb;margin-top:3px">'+
+      '<span style="flex:1">うち消費税</span><span style="margin-left:8px">¥'+fmt(taxTotal)+'</span></div>';
+  }
+  summaryEl.innerHTML = list || '<div style="font-size:12px;color:#9ca3af">（品目なし）</div>';
+}
+
+// 非課税・不課税のみのレシートはインボイス有無を非表示にする
+function updateInvoiceVisB(ri, items){
+  var box = document.getElementById('r'+ri+'invbox');
+  if(!box) return;
+  var allNoTax = items.length > 0 && items.every(function(it){
+    return it.tax_category === '非課税' || it.tax_category === '不課税';
+  });
+  box.style.display = allNoTax ? 'none' : 'block';
+}
+
+// 現在表示中の各レシートの編集内容（用途・品目・店名・日付・インボイス）をRECEIPTSに確定保存
+// 追加読込で画面を作り直しても内容が失われないようにする
+function saveCurrentEditsToReceipts(){
+  RECEIPTS.forEach(function(r, ri){
+    if(!r.data) return;
+    // 用途
+    var useEl = document.getElementById('r'+ri+'use');
+    if(useEl){
+      var uv = useEl.value;
+      if(uv === '__other'){ var oEl=document.getElementById('r'+ri+'other'); uv = oEl?oEl.value.trim():'その他'; }
+      if(uv) r._use = uv;
+    }
+    // 店名・日付・インボイス・車番
+    function gv(id){ var e=document.getElementById('r'+ri+id); return e?e.value:undefined; }
+    var st=gv('store'), dt=gv('date'), iv=gv('inv'), car=gv('car');
+    if(st!==undefined) r.data.store_name = st;
+    if(dt!==undefined) r.data.date = dt;
+    if(iv!==undefined) r.data.invoice_number = iv;
+    if(car!==undefined) r.data.car_number = car;
+    // 品目（DOMから収集）
+    if(document.getElementById('r'+ri+'irow0')){
+      var items=[], i=0;
+      while(true){
+        var amEl=document.getElementById('r'+ri+'am'+i);
+        if(!amEl) break;
+        if(amEl.getAttribute('data-removed')!=='1'){
+          var nmEl=document.getElementById('r'+ri+'nm'+i);
+          var txEl=document.getElementById('r'+ri+'tx'+i);
+          var acEl=document.getElementById('r'+ri+'ac'+i);
+          var nm = nmEl?nmEl.value.trim():'';
+          var amt = parseInt(amEl.value,10)||0;
+          if(!(nm==='' && amt===0)){
+            items.push({ name:nm||'(品目)', amount:amt, tax_category:txEl?txEl.value:'10%標準', account:acEl?acEl.value:r._use });
+          }
+        }
+        i++;
+      }
+      if(items.length){ r.data.items = items; }
+    }
+  });
+}
+
+// 明細の用途（勘定科目）が変わったら、上の用途プルダウンも連動させる
+// 明細の用途がすべて同じなら上もそれに合わせる。複数種類あるなら上は変えない
+function onItemAccountChange(ri){
+  var accts = [];
+  var i = 0;
+  while(true){
+    var amEl = document.getElementById('r'+ri+'am'+i);
+    var acEl = document.getElementById('r'+ri+'ac'+i);
+    if(!amEl) break;
+    if(amEl.getAttribute('data-removed') !== '1' && acEl){
+      if(accts.indexOf(acEl.value) < 0) accts.push(acEl.value);
+    }
+    i++;
+  }
+  // 明細の用途が1種類だけなら、上の用途プルダウンもそれに合わせる
+  if(accts.length === 1){
+    var useEl = document.getElementById('r'+ri+'use');
+    if(useEl){
+      // 選択肢になければ追加してから選択
+      var found = false;
+      for(var j=0;j<useEl.options.length;j++){ if(useEl.options[j].value===accts[0]){ found=true; break; } }
+      if(!found){
+        var opt = document.createElement('option');
+        opt.value = accts[0]; opt.textContent = accts[0];
+        useEl.insertBefore(opt, useEl.firstChild);
+      }
+      useEl.value = accts[0];
+      if(RECEIPTS[ri]) RECEIPTS[ri]._use = accts[0];
+    }
+  }
 }
 
 // 内税/外税トグル切り替え
@@ -1235,10 +1395,12 @@ function applyDetailB(ri){
       var txEl = document.getElementById('r'+ri+'tx'+j);
       if(!nmEl || !amEl) break;
       if(amEl.getAttribute('data-removed') !== '1'){
+        var acElB = document.getElementById('r'+ri+'ac'+j);
         newItems.push({
           name: nmEl.value,
           amount: parseInt(amEl.value,10)||0,
-          tax_category: txEl ? txEl.value : ''
+          tax_category: txEl ? txEl.value : '',
+          account: acElB ? acElB.value : ''
         });
       }
       j++;
@@ -1258,6 +1420,17 @@ function applyDetailB(ri){
         '<span style="flex:1">消費税</span><span style="margin-left:8px">¥'+fmt(taxAmt2)+'</span></div>';
     }
     summaryEl.innerHTML = newList || '<div style="font-size:12px;color:#9ca3af">（品目なし）</div>';
+
+    // ★修正後の品目をRECEIPTS[ri].dataに保存する（確認画面から戻っても初期値に戻らないように）
+    if(RECEIPTS[ri] && RECEIPTS[ri].data){
+      RECEIPTS[ri].data.items = newItems.map(function(it){
+        return { name: it.name, amount: it.amount, tax_category: it.tax_category, account: it.account };
+      });
+      // 合計も品目合計で更新（d.totalが古い値のまま残って優先されるのを防ぐ）
+      var newSum = newItems.reduce(function(s,it){ return s + (Number(it.amount)||0); }, 0);
+      var taxType3 = RECEIPTS[ri]._taxType || 'inclusive';
+      RECEIPTS[ri].data.total = (taxType3 === 'exclusive') ? (newSum + taxAmt2) : newSum;
+    }
 
     // インボイス警告の再評価（非課税・不課税のみなら非表示）
     var invFlagEl = summaryEl.previousElementSibling;
@@ -1396,13 +1569,15 @@ function checkWarnB(ri){
 
 function analyzeAll(){
   if(!RECEIPTS.length) return;
-  var person = $e('up-person') ? $e('up-person').value : '';
+  var person = ($e('up-person') ? $e('up-person').value : '') || CURRENT_PERSON || '';
   CURRENT_PERSON = person;
   $e('area').innerHTML='<div style="text-align:center;padding:60px 20px;color:#6b7280"><div class="spin"></div><div id="prog">解析中... (0/'+RECEIPTS.length+')</div></div>';
   function next(i){
     if(i>=RECEIPTS.length){ expandReceipts(); applyPastUses(person); return; }
     var p=$e('prog'); if(p) p.textContent='解析中... ('+(i+1)+'/'+RECEIPTS.length+')';
     var r=RECEIPTS[i];
+    // すでに解析済み（追加読込前のレシート）はスキップ
+    if(r.data || r._expanded){ next(i+1); return; }
     fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json','x-access-token':USER_TOKEN},body:JSON.stringify({image:r.b64,mimeType:r.mime})})
     .then(function(res){if(!res.ok)return res.json().then(function(e){throw new Error(e.error||res.status);});return res.json();})
     .then(function(d){r.data=d; next(i+1);})
@@ -1449,21 +1624,29 @@ function applyPastUses(person){
 function expandReceipts(){
   var expanded = [];
   RECEIPTS.forEach(function(r){
+    // すでに展開済みのものは触らない（二重展開＝重複生成を防ぐ）
+    if(r._expanded){
+      expanded.push(r);
+      return;
+    }
     if(r.data && Array.isArray(r.data.receipts) && r.data.receipts.length > 1){
       // 複数レシート：写真は共有しつつ、レシートごとにエントリを作る
       r.data.receipts.forEach(function(rc){
         expanded.push({
           b64: r.b64, mime: r.mime, preview: r.preview,
           data: rc,            // 個別レシートのデータ
-          _fromMulti: true
+          _fromMulti: true,
+          _expanded: true
         });
       });
     } else if(r.data && Array.isArray(r.data.receipts) && r.data.receipts.length === 1){
       // 1レシート：dataを単一レシートに正規化
       r.data = r.data.receipts[0];
+      r._expanded = true;
       expanded.push(r);
     } else {
       // エラー or 旧形式：そのまま
+      r._expanded = true;
       expanded.push(r);
     }
   });
@@ -1479,7 +1662,7 @@ function showAllForms(person){
   banner.className = 'banner';
   banner.innerHTML =
     '<div style="font-size:11px;color:#9ca3af;margin-bottom:2px">全レシート合計</div>' +
-    '<div style="font-size:28px;font-weight:700">¥'+fmt(grandTotal)+'</div>' +
+    '<div id="grandTotalDisp" style="font-size:28px;font-weight:700">¥'+fmt(grandTotal)+'</div>' +
     '<div style="font-size:12px;color:#9ca3af;margin-top:4px">精算日：<b style="color:#fff">署名時に自動記録されます</b></div>';
   el.appendChild(banner);
 
@@ -1633,10 +1816,10 @@ function showAllForms(person){
       return '<div class="irow" id="r'+ri+'irow'+i+'">'+
         '<input type="text" id="r'+ri+'nm'+i+'" value="'+(it.name||'').replace(/"/g,'&quot;')+'" placeholder="\u54c1\u76ee\u540d" style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;margin-bottom:6px"/>'+
         '<div style="display:flex;gap:6px;margin-bottom:6px">'+
-        '<select id="r'+ri+'tx'+i+'" style="flex:1;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit">'+tx+'</select>'+
+        '<select id="r'+ri+'tx'+i+'" onchange="onTaxCatChange('+ri+')" style="flex:1;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit">'+tx+'</select>'+
         '<input type="number" id="r'+ri+'am'+i+'" value="'+it.amount+'" oninput="recalcTotB('+ri+')" style="width:110px;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;text-align:right"/>'+
         '</div>'+
-        '<select id="r'+ri+'ac'+i+'" style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit">'+opts+'</select>'+
+        '<select id="r'+ri+'ac'+i+'" onchange="onItemAccountChange('+ri+')" style="width:100%;padding:8px;font-size:16px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit">'+opts+'</select>'+
         '<button type="button" onclick="removeItemB('+ri+','+i+')" style="background:none;border:none;color:#dc2626;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;padding:6px 0 0;display:block">\u2715 この品目を申請から除く</button>'+
         '</div>';
     }).join('');
@@ -1686,7 +1869,7 @@ function showAllForms(person){
       '<div id="r'+ri+'otherwrap" style="display:none"><input id="r'+ri+'other" placeholder="\u7528\u9014\u3092\u5165\u529b" style="margin-top:8px;font-size:16px"/></div>'+
       '<div style="font-size:11px;color:#6b7280;line-height:1.5;margin-top:6px">\u{1f4a1} \u7528\u9014\u304c\u8907\u6570\u3042\u308b\u5834\u5408\u306f\u300c\u660e\u7d30\u3092\u4fee\u6b63\u300d\u304b\u3089\u54c1\u76ee\u3054\u3068\u306b\u9078\u3093\u3067\u304f\u3060\u3055\u3044</div>'+
       // インボイス：番号表示＋有/無トグル
-      '<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;margin-top:10px">'+
+      '<div id="r'+ri+'invbox" style="display:'+(allNoTax?'none':'block')+';background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;margin-top:10px">'+
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
           '<span style="font-size:12px;font-weight:700;color:#374151">インボイス（適格請求書）</span>'+
           '<div style="display:flex;gap:0;border:1px solid #d1d5db;border-radius:8px;overflow:hidden">'+
@@ -1747,15 +1930,22 @@ function showAllForms(person){
     checkWarnB(ri);
   });
 
-  // 読み取れなかったとき用：手入力でレシートを追加
-  var addManualBtn = document.createElement('button');
-  addManualBtn.style.cssText = 'display:block;width:100%;padding:13px;border:2px dashed #94a3b8;border-radius:10px;background:#fff;color:#475569;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:14px';
-  addManualBtn.textContent = '＋ 手入力でレシートを追加';
-  addManualBtn.onclick = function(){ addManualReceipt(); };
-  el.appendChild(addManualBtn);
+  // （手入力レシート追加は廃止。読めないレシートは「追加で読み込む」かAI解析後の明細修正で対応）
+
 
   var sbwrap = document.createElement('div');
   sbwrap.id = 'sbwrap';
+  var addMoreBtn = document.createElement('button');
+  addMoreBtn.className = 'btn bw';
+  addMoreBtn.textContent = '＋ レシートを追加で読み込む';
+  addMoreBtn.style.marginBottom = '8px';
+  addMoreBtn.onclick = function(){
+    // 現在の編集内容をRECEIPTSに確定保存してから、追加読込画面へ（既存は保持）
+    saveCurrentEditsToReceipts();
+    showUpload(true);  // keepReceipts=true で既存レシートを残す
+  };
+  el.appendChild(addMoreBtn);
+
   var confirmbtn = document.createElement('button');
   confirmbtn.id = 'confirmbtn';
   confirmbtn.className = 'btn bg';
@@ -1855,14 +2045,16 @@ function showAllForms(person){
       // ユーザーが選択した内税/外税設定を使用
       var taxType = r._taxType || 'inclusive';
       var isExclusive = (taxType === 'exclusive');
-      // 品目が修正されたか
-      var origSum=(d.items||[]).reduce(function(s,it){return s+(Number(it.amount)||0);},0);
-      var edited = (itemsSum !== origSum);
+      // 合計の決定ロジック（金額が戻るバグの修正）：
+      //  ・明細行がDOMに描画されている＝ユーザーが画面で確認/編集できる状態 → 画面の品目合計を常に正とする
+      //  ・明細が描画されていない（解析直後など）→ レシート記載合計(d.total)を使う
       var rTotal;
-      var statedT = (d.total!=null) ? Number(d.total) : null;
-      if(edited){
+      var domHasItems = !!$e('r'+ri+'irow0');
+      if(domHasItems){
+        // 画面の品目合計を採用（外税なら税を足す）。d.totalには絶対に戻さない
         rTotal = isExclusive ? (itemsSum + taxAmt) : itemsSum;
       } else {
+        var statedT = (d.total!=null) ? Number(d.total) : null;
         rTotal = (statedT!=null) ? statedT : (isExclusive ? (itemsSum + taxAmt) : itemsSum);
       }
       return {
