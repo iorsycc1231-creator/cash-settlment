@@ -2369,7 +2369,7 @@ function showConfirm(snap){
   el.appendChild(confCard);
 
   var sndbtn=document.createElement('button');
-  sndbtn.className='btn bg'; sndbtn.textContent=EDITING_APP_ID?'修正する →':'送信する'; sndbtn.style.marginTop='0';
+  sndbtn.className='btn bg'; sndbtn.textContent=EDITING_APP_ID?'修正を送信する':'送信する'; sndbtn.style.marginTop='0';
   el.appendChild(sndbtn);
 
   var bkbtn=document.createElement('button');
@@ -3048,7 +3048,7 @@ function shD(id){
     if(a.client_sign){
       signSection=
         '<hr/>'+
-        '<div style="font-size:13px;font-weight:700;margin-bottom:8px">電子サイン（顧問先）</div>'+
+        '<div style="font-size:13px;font-weight:700;margin-bottom:8px">電子サイン</div>'+
         '<img src="'+a.client_sign+'" style="border:1px solid #e5e7eb;border-radius:8px;width:100%;max-height:100px;object-fit:contain"/>'+
         '<div style="font-size:11px;color:#9ca3af;margin-top:4px">署名日時：'+(a.client_signed_at||'')+'</div>'+
         '<hr/>'+
@@ -3056,7 +3056,7 @@ function shD(id){
     } else {
       signSection=
         '<hr/><div class="sign-box">'+
-        '<div style="font-size:13px;font-weight:700;margin-bottom:8px">電子サイン（顧問先）</div>'+
+        '<div style="font-size:13px;font-weight:700;margin-bottom:8px">電子サイン</div>'+
         '<p style="font-size:12px;color:#6b7280;margin-bottom:10px">現金精算前に署名してください</p>'+
         '<canvas id="ccvs" height="120" style="border:2px solid #e5e7eb;border-radius:8px;width:100%;touch-action:none;cursor:crosshair;background:#fff;display:block"></canvas>'+
         '<div style="display:flex;gap:8px;margin-top:8px;align-items:center">'+
