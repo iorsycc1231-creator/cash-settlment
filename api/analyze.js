@@ -117,7 +117,7 @@ export default async function handler(req, res) {
 - accountは以下のルールで判定する：
   ・店名や品目に「駐車場」「パーキング」「タイムズ」「Times」「TIMES」→「駐車代」
   ・「交通」「タクシー」「Uber」「uber」「メーター運賃」「運賃」「ハイヤー」「TAXI」、または店名が「〇〇交通」「〇〇タクシー」「〇〇ハイヤー」→「タクシー代」
-  ・「飲料」「ドリンク」「ジュース」「カゴメ」「お茶」「緑茶」「麦茶」「ほうじ茶」「コーヒー」「コーラ」「サイダー」「水」→「飲料代」
+  ・「飲料」「ドリンク」「ジュース」「カゴメ」「お茶」「緑茶」「麦茶」「ほうじ茶」「コーヒー」「コーラ」「サイダー」「水」→「社内用ドリンク」
   ・「レジ袋」「レジ袋有料」「持ち帰り袋」→「消耗品」
   ・飲食店（レストラン・カフェ・定食・ラーメン・寿司・居酒屋等）→「飲食代」
   ・品目名が「部門」「部門1」「部門01」など部門＋数字、または「お買上」「商品」のような商品名未設定の汎用表記の場合 →「飲食代」（飲食店のレジは品名を設定していないことが多く「部門」と印字されるため。ただし店名から明らかに飲食店でない場合（ホームセンター・薬局等）は店の業種に合わせて判定する）
@@ -142,7 +142,7 @@ export default async function handler(req, res) {
 - 「メーター運賃」「運賃」「乗車」「ご乗車」「TAXI」「タクシー」「ハイヤー」「交通」などの語、またはタクシー会社・交通事業者名（〇〇交通、〇〇タクシー、〇〇ハイヤー等）が店名・品目にあれば account を「タクシー代」にする。
 
 次のJSON形式のみで返す（説明不要）。必ずreceipts配列の形にする：
-{"receipts":[{"store_name":"店名","phone":"電話番号またはnull","invoice_number":"T+13桁またはnull","invoice_status":"適格または要確認","date":"YYYY-MM-DD","car_number":"自動車登録番号またはnull","tax_type":"内税または外税","items":[{"name":"印字文字そのまま","amount":数値(値引きは必ず負の数),"tax_category":"10%標準または8%軽減または非課税または不課税","account":"駐車代/タクシー代/飲料代/飲食代/消耗品/自賠責保険/雑費のいずれか"}],"taxable_8":数値またはnull,"taxable_10":数値またはnull,"tax_8":数値またはnull,"tax_10":数値またはnull,"total":数値}]}` }
+{"receipts":[{"store_name":"店名","phone":"電話番号またはnull","invoice_number":"T+13桁またはnull","invoice_status":"適格または要確認","date":"YYYY-MM-DD","car_number":"自動車登録番号またはnull","tax_type":"内税または外税","items":[{"name":"印字文字そのまま","amount":数値(値引きは必ず負の数),"tax_category":"10%標準または8%軽減または非課税または不課税","account":"駐車代/タクシー代/社内用ドリンク/飲食代/消耗品/自賠責保険/雑費のいずれか"}],"taxable_8":数値またはnull,"taxable_10":数値またはnull,"tax_8":数値またはnull,"tax_10":数値またはnull,"total":数値}]}` }
           ]
         }]
       })
@@ -191,7 +191,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'レシートを認識できませんでした' });
     }
 
-    const validAccounts = ['駐車代','タクシー代','飲料代','飲食代','打ち合わせ','残業食事代','草刈り食事代','消耗品','自賠責保険','不明','雑費','会費'];
+    const validAccounts = ['駐車代','タクシー代','社内用ドリンク','飲食代','打ち合わせ','残業食事代','草刈り食事代','消耗品','自賠責保険','不明','雑費','会費'];
     const discountPattern = /割引|値引|クーポン|ポイント|code\d+|discount/i;
 
     receipts = receipts.map(rcpt => {
