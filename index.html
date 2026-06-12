@@ -2159,7 +2159,7 @@ function showAllForms(person){
   var confirmbtn = document.createElement('button');
   confirmbtn.id = 'confirmbtn';
   confirmbtn.className = 'btn bg';
-  confirmbtn.textContent = '申請内容を確認する →';
+  confirmbtn.textContent = EDITING_APP_ID ? '修正内容を確認する →' : '申請内容を確認する →';
   sbwrap.appendChild(confirmbtn);
   el.appendChild(sbwrap);
 
@@ -2369,7 +2369,7 @@ function showConfirm(snap){
   el.appendChild(confCard);
 
   var sndbtn=document.createElement('button');
-  sndbtn.className='btn bg'; sndbtn.textContent=EDITING_APP_ID?'修正内容を確認する →':'送信する'; sndbtn.style.marginTop='0';
+  sndbtn.className='btn bg'; sndbtn.textContent=EDITING_APP_ID?'修正する →':'送信する'; sndbtn.style.marginTop='0';
   el.appendChild(sndbtn);
 
   var bkbtn=document.createElement('button');
