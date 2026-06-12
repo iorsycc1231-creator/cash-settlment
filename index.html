@@ -1665,7 +1665,8 @@ function setInvStatus(ri, status, fromUser){
   var noBtn  = document.getElementById('r'+ri+'invno');
   if(yesBtn){ yesBtn.style.cssText = 'padding:6px 14px;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;'+(status==='yes'?'background:#16a34a;color:#fff':'background:#fff;color:#6b7280'); }
   if(noBtn){ noBtn.style.cssText = 'padding:6px 14px;border:none;border-left:1px solid #d1d5db;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;'+(status==='no'?'background:#dc2626;color:#fff':'background:#fff;color:#6b7280'); }
-  // 「有」なのに番号が不正なら警告
+  // 「有」なのに番号が不正なら警告（手入力レシートは警告不要）
+  if(r.manual) return;
   var warnEl = document.getElementById('r'+ri+'invwarn');
   if(warnEl){
     var no = (r.data && r.data.invoice_number) ? r.data.invoice_number : '';
@@ -1921,8 +1922,16 @@ function showAllForms(person){
         '<input type="text" id="r'+ri+'mdate" value="'+(r.mdate||today())+'" placeholder="YYYY-MM-DD" style="width:100%;padding:10px;font-size:16px;border:1px solid #e5e7eb;border-radius:8px;font-family:inherit"/>'+
         '<label style="display:block;font-size:12px;font-weight:600;color:#6b7280;margin:10px 0 4px">合計金額（税込）</label>'+
         '<input type="number" id="r'+ri+'mtotal" value="'+(r.mtotal||'')+'" placeholder="例：1500" oninput="RECEIPTS['+ri+'].mtotal=Number(this.value)||0" style="width:100%;padding:10px;font-size:16px;border:1px solid #e5e7eb;border-radius:8px;font-family:inherit"/>'+
-        '<label style="display:block;font-size:12px;font-weight:600;color:#6b7280;margin:10px 0 4px">インボイス番号（任意）</label>'+
-        '<input type="text" id="r'+ri+'minv" value="'+(r.minv||'').replace(/"/g,'&quot;')+'" placeholder="T+13桁（なければ空欄）" style="width:100%;padding:10px;font-size:16px;border:1px solid #e5e7eb;border-radius:8px;font-family:inherit"/>'+
+        '<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;margin-top:10px">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
+          '<span style="font-size:12px;font-weight:700;color:#374151">インボイス（適格請求書）</span>'+
+          '<div style="display:flex;gap:0;border:1px solid #d1d5db;border-radius:8px;overflow:hidden">'+
+            '<button type="button" id="r'+ri+'invyes" onclick="setInvStatus('+ri+',\'yes\',1)" style="padding:6px 14px;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;'+(r._invst==='yes'?'background:#16a34a;color:#fff':'background:#fff;color:#6b7280')+'">有（課税業者）</button>'+
+            '<button type="button" id="r'+ri+'invno" onclick="setInvStatus('+ri+',\'no\',1)" style="padding:6px 14px;border:none;border-left:1px solid #d1d5db;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;'+(r._invst==='no'||!r._invst?'background:#dc2626;color:#fff':'background:#fff;color:#6b7280')+'">無（免税）</button>'+
+          '</div>'+
+        '</div>'+
+        '<input type="text" id="r'+ri+'minv" value="'+(r.minv||'').replace(/"/g,'&quot;')+'" placeholder="T+13桁（インボイス番号があれば入力）" style="width:100%;padding:8px;font-size:14px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit"/>'+
+      '</div>'+
         '<label style="display:block;font-size:12px;font-weight:600;color:#6b7280;margin:10px 0 4px">用途を選んでください</label>'+
         '<select id="r'+ri+'use" onchange="setUseB('+ri+',this.value)" style="width:100%;padding:11px;font-size:16px;border:1px solid #e5e7eb;border-radius:8px;font-family:inherit"><option value="">\u25bc 選択してください</option>'+acOptM+'<option value="__other">その他（自由入力）</option></select>'+
         '<div id="r'+ri+'otherwrap" style="display:none"><input id="r'+ri+'other" placeholder="用途を入力" style="margin-top:8px;font-size:16px;width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:8px;font-family:inherit"/></div>'+
@@ -2130,7 +2139,7 @@ function showAllForms(person){
   var manualBtn = document.createElement('button');
   manualBtn.className = 'btn bw';
   manualBtn.textContent = '＋ 手入力でレシートを追加';
-  manualBtn.style.marginBottom = '8px';
+  manualBtn.style.cssText = 'display:block;width:100%;padding:14px;border:2px dashed #9ca3af;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;background:#fff;color:#374151;margin-bottom:8px;text-align:center';
   manualBtn.onclick = function(){ addManualReceipt(); };
   el.appendChild(manualBtn);
 
@@ -2139,7 +2148,7 @@ function showAllForms(person){
   var addMoreBtn = document.createElement('button');
   addMoreBtn.className = 'btn bw';
   addMoreBtn.textContent = '＋ レシートを追加で読み込む';
-  addMoreBtn.style.marginBottom = '8px';
+  addMoreBtn.style.cssText = 'display:block;width:100%;padding:14px;border:2px dashed #9ca3af;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;background:#fff;color:#374151;margin-bottom:8px;text-align:center';
   addMoreBtn.onclick = function(){
     // 現在の編集内容をRECEIPTSに確定保存してから、追加読込画面へ（既存は保持）
     saveCurrentEditsToReceipts();
