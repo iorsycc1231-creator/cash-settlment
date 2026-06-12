@@ -345,7 +345,27 @@ hr{border:none;border-top:1px solid #e5e7eb;margin:12px 0}
 
 <script>
 var APPS = JSON.parse(localStorage.getItem('apps')||'[]');
+// 申請データの日付系フィールドを必ず文字列にする共通関数。
+// スプレッドシート由来のDate/数値型が混ざると .slice 等で型エラーになるため、
+// localStorage読込時・GAS受信時の両方で必ず通す
+function normalizeAppDates(list){
+  (list||[]).forEach(function(a){
+    if(!a) return;
+    ['date','settlement_date','created','client_signed_at'].forEach(function(k){
+      if(a[k] != null && typeof a[k] !== 'string') a[k] = String(a[k]);
+    });
+    (a.receipts||[]).forEach(function(rc){
+      if(rc && rc.date != null && typeof rc.date !== 'string') rc.date = String(rc.date);
+    });
+    (a.items||[]).forEach(function(it){
+      if(it && it.receiptDate != null && typeof it.receiptDate !== 'string') it.receiptDate = String(it.receiptDate);
+    });
+  });
+  return list;
+}
+normalizeAppDates(APPS);
 var DEPOSITS = JSON.parse(localStorage.getItem('deposits')||'[]');
+DEPOSITS.forEach(function(d){ if(d && d.date != null && typeof d.date !== 'string') d.date = String(d.date); });
 var CARRYOVER = localStorage.getItem('carryover') !== null ? Number(localStorage.getItem('carryover')) : 100000; // 前月繰越（初期値10万円、締め処理後は保存値を使用）
 var STORE_MASTER = JSON.parse(localStorage.getItem('store_master')||'[]'); // 店舗マスタ（店名/電話番号→インボイス番号の自動補完用）
 var LAST_CLOSE_AT = '';
@@ -2560,17 +2580,7 @@ function rA(){
   loadFromSheet(function(res){
     if(res){
       // 締め日以降のデータのみGASが返す
-      APPS = res.data || [];
-      // GASのスプレッドシートは日付セルをDate/数値で返すことがあるため、
-      // 日付系フィールドを必ず文字列に正規化する（.slice等での型エラー防止）
-      APPS.forEach(function(a){
-        ['date','settlement_date','created'].forEach(function(k){
-          if(a[k] != null && typeof a[k] !== 'string') a[k] = String(a[k]);
-        });
-        (a.receipts||[]).forEach(function(rc){
-          if(rc.date != null && typeof rc.date !== 'string') rc.date = String(rc.date);
-        });
-      });
+      APPS = normalizeAppDates(res.data || []);
       // GASの設定シートから繰越額を反映
       if(res.carryover !== undefined){
         CARRYOVER = Number(res.carryover);
