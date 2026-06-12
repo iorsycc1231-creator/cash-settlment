@@ -3045,7 +3045,17 @@ function shD(id){
 
   var signSection='';
   if(!isPaid(a)){
-    if(a.client_sign){
+    if(a.deleted){
+      // 削除済み：電子サインエリアをグレーアウトして無効化
+      signSection=
+        '<hr/><div class="sign-box" style="opacity:0.4;pointer-events:none">'+
+        '<div style="font-size:13px;font-weight:700;margin-bottom:8px">電子サイン</div>'+
+        '<p style="font-size:12px;color:#6b7280;margin-bottom:10px">現金精算前に署名してください</p>'+
+        '<canvas height="120" style="border:2px solid #e5e7eb;border-radius:8px;width:100%;background:#f3f4f6;display:block"></canvas>'+
+        '</div><hr/>'+
+        '<button class="btn bd" disabled>現金精算を完了する</button>'+
+        '<p style="font-size:11px;color:#9ca3af;text-align:center;margin-top:6px">※復元すると精算できます</p>';
+    } else if(a.client_sign){
       signSection=
         '<hr/>'+
         '<div style="font-size:13px;font-weight:700;margin-bottom:8px">電子サイン</div>'+
