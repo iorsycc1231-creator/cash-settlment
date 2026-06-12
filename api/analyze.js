@@ -114,6 +114,7 @@ export default async function handler(req, res) {
 - tax_8 / tax_10：レシートに記載された8%・10%の消費税額。「外税額」「消費税」「内消費税等」どの形式でも印字された金額をそのまま読む。なければnull。自分で計算し直さない。※税額は参考値であり、会計処理は税率別対象額（taxable）と税区分で行うため、対象額の読み取りを優先する
 - 端数処理の結果レシート上で「¥0」と印字されている場合は 0 とする（例：税率10%対象額¥3で内消費税等10%が¥0なら tax_10 は 0）
 - car_number：自賠責保険・自動車保険の領収証の場合、「自動車登録番号」「車両番号」（例：市川400 さ 62）を読み取る。それ以外のレシートや読み取れない場合は null
+- policy_number：自賠責保険・自動車保険の領収証で「証券番号」「証明書番号」「保険証券番号」が印字されている場合、その番号を読み取る。なければnull
 - accountは以下のルールで判定する：
   ・店名や品目に「駐車場」「パーキング」「タイムズ」「Times」「TIMES」→「駐車代」
   ・「交通」「タクシー」「Uber」「uber」「メーター運賃」「運賃」「ハイヤー」「TAXI」、または店名が「〇〇交通」「〇〇タクシー」「〇〇ハイヤー」→「タクシー代」
@@ -142,7 +143,7 @@ export default async function handler(req, res) {
 - 「メーター運賃」「運賃」「乗車」「ご乗車」「TAXI」「タクシー」「ハイヤー」「交通」などの語、またはタクシー会社・交通事業者名（〇〇交通、〇〇タクシー、〇〇ハイヤー等）が店名・品目にあれば account を「タクシー代」にする。
 
 次のJSON形式のみで返す（説明不要）。必ずreceipts配列の形にする：
-{"receipts":[{"store_name":"店名","phone":"電話番号またはnull","invoice_number":"T+13桁またはnull","invoice_status":"適格または要確認","date":"YYYY-MM-DD","car_number":"自動車登録番号またはnull","tax_type":"内税または外税","items":[{"name":"印字文字そのまま","amount":数値(値引きは必ず負の数),"tax_category":"10%標準または8%軽減または非課税または不課税","account":"駐車代/タクシー代/社内用ドリンク/飲食代/消耗品/自賠責保険/雑費のいずれか"}],"taxable_8":数値またはnull,"taxable_10":数値またはnull,"tax_8":数値またはnull,"tax_10":数値またはnull,"total":数値}]}` }
+{"receipts":[{"store_name":"店名","phone":"電話番号またはnull","invoice_number":"T+13桁またはnull","invoice_status":"適格または要確認","date":"YYYY-MM-DD","car_number":"自動車登録番号またはnull","policy_number":"証券番号またはnull","tax_type":"内税または外税","items":[{"name":"印字文字そのまま","amount":数値(値引きは必ず負の数),"tax_category":"10%標準または8%軽減または非課税または不課税","account":"駐車代/タクシー代/社内用ドリンク/飲食代/消耗品/自賠責保険/雑費のいずれか"}],"taxable_8":数値またはnull,"taxable_10":数値またはnull,"tax_8":数値またはnull,"tax_10":数値またはnull,"total":数値}]}` }
           ]
         }]
       })
